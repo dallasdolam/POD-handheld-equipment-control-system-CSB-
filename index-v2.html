@@ -1,0 +1,2652 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>POD Handheld Equipment Control</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Supabase JS v2 SDK (dùng cho Real-time; CRUD còn có fallback REST API thuần) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f1f5f9; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .tab-active { color: #1d4ed8; border-bottom: 3px solid #1d4ed8; background: #eff6ff; font-weight: 700; }
+    .modal-backdrop { background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(2px); }
+    .typing-dot { animation: blink 1.2s infinite; }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+  </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+<!-- ==================== LOGIN / REGISTER SCREEN ==================== -->
+<div id="authScreen" class="fixed inset-0 z-50 bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 flex items-center justify-center p-4 overflow-y-auto">
+  <div class="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden my-auto">
+    <div class="bg-gradient-to-r from-emerald-700 to-teal-700 p-6 text-white text-center">
+      <div class="w-14 h-14 mx-auto mb-3 rounded-2xl bg-white/15 flex items-center justify-center text-2xl font-black tracking-tight shadow-inner">POD</div>
+      <h1 class="text-xl font-bold">Kiểm soát Thiết bị Cầm tay</h1>
+      <p class="text-emerald-100 text-xs mt-1">Đồng bộ Online Real-time (Supabase + GitHub Pages)</p>
+      <div id="authEnvBadge" class="inline-flex items-center gap-1.5 mt-3 px-3 py-1 rounded-full text-[11px] font-semibold bg-white/15 text-emerald-50">
+        <span class="w-2 h-2 rounded-full bg-amber-400"></span> Đang kiểm tra kết nối...
+      </div>
+    </div>
+
+    <div class="p-6">
+      <div class="flex rounded-xl bg-slate-100 p-1 mb-5">
+        <button id="btnTabLogin" onclick="switchAuthMode('login')" class="flex-1 py-2 text-sm font-semibold rounded-lg bg-white text-emerald-700 shadow-sm transition">Đăng nhập</button>
+        <button id="btnTabReg" onclick="switchAuthMode('register')" class="flex-1 py-2 text-sm font-semibold rounded-lg text-slate-500 hover:text-slate-700 transition">Đăng ký mới</button>
+      </div>
+
+      <form id="authForm" onsubmit="handleAuthSubmit(event)" class="space-y-4">
+        <div id="regNameGroup" class="hidden">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Họ và tên (hiển thị PIC)</label>
+          <input id="authFullName" type="text" placeholder="VD: Nguyễn Công Danh" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Tên đăng nhập</label>
+          <input id="authUsername" type="text" required placeholder="admin" value="admin" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Mật khẩu</label>
+          <input id="authPassword" type="password" required placeholder="••••••" value="123456" class="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        </div>
+        <div id="rememberRow" class="flex items-center justify-between text-xs text-slate-600">
+          <label class="inline-flex items-center gap-2 cursor-pointer">
+            <input id="authRemember" type="checkbox" checked class="rounded text-emerald-600 focus:ring-emerald-500" />
+            <span>Ghi nhớ đăng nhập</span>
+          </label>
+          <button type="button" onclick="openCloudConfigModal()" class="text-emerald-700 font-semibold hover:underline">⚡ Cài Supabase</button>
+        </div>
+
+        <div id="authError" class="hidden text-xs text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2"></div>
+
+        <button id="authSubmitBtn" type="submit" class="w-full py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm shadow-md transition flex items-center justify-center gap-2">
+          <span>Đăng nhập hệ thống</span>
+        </button>
+      </form>
+
+      <div class="mt-4 pt-4 border-t border-slate-100 text-center">
+        <p class="text-[11px] text-slate-500">Mặc định: <strong class="text-slate-700">admin</strong> / <strong class="text-slate-700">123456</strong> (hoặc <strong class="text-slate-700">user</strong> / <strong class="text-slate-700">123456</strong>)</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== MAIN APP ==================== -->
+<div id="appShell" class="hidden flex-1 flex flex-col min-h-screen">
+  <!-- HEADER -->
+  <header class="bg-slate-900 text-white sticky top-0 z-30 shadow-md">
+    <div class="max-w-7xl mx-auto px-3 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center font-black text-sm shadow">POD</div>
+        <div>
+          <div class="font-bold text-sm sm:text-base leading-tight">Handheld Equipment Control</div>
+          <div class="flex items-center gap-2 text-[11px] text-slate-300">
+            <span id="syncStatusDot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span id="syncStatusText">Đang khởi tạo...</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+        <button onclick="manualRefresh()" title="Đồng bộ lại dữ liệu từ Supabase" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700 transition flex items-center gap-1">
+          <span>🔄</span><span class="hidden sm:inline">Làm mới</span>
+        </button>
+        <button onclick="openCloudConfigModal()" title="Cấu hình kết nối Supabase Cloud" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700 transition flex items-center gap-1">
+          <span>⚡</span><span class="hidden sm:inline">Supabase</span>
+        </button>
+        <button id="btnManageUsers" onclick="openUsersModal()" title="Quản lý tài khoản & mật khẩu" class="hidden px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700 transition flex items-center gap-1">
+          <span>👥</span><span class="hidden md:inline">Tài khoản</span>
+        </button>
+        <button onclick="openAiKeyModal()" title="Cài đặt khóa Gemini AI (tùy chọn)" class="px-2.5 py-1.5 rounded-lg bg-indigo-600/90 hover:bg-indigo-600 text-xs font-medium transition flex items-center gap-1">
+          <span>🤖</span><span class="hidden sm:inline">AI Key</span>
+        </button>
+        <label title="Nhập từ file Excel (.xlsx)" class="cursor-pointer px-2.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-medium transition flex items-center gap-1">
+          <span>📥</span><span class="hidden md:inline">Import</span>
+          <input type="file" accept=".xlsx,.xls" onchange="importExcel(event)" class="hidden" />
+        </label>
+        <button onclick="exportExcel()" title="Xuất ra file Excel 2019 (.xlsx)" class="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-medium transition flex items-center gap-1">
+          <span>📤</span><span class="hidden md:inline">Export</span>
+        </button>
+
+        <div class="flex items-center gap-2 pl-2 ml-1 border-l border-slate-700">
+          <div id="userAvatar" class="w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center text-xs font-bold">A</div>
+          <div class="hidden sm:block leading-tight">
+            <div id="userDisplayName" class="text-xs font-semibold">Admin</div>
+            <div id="userDisplayRole" class="text-[10px] text-slate-400">Admin</div>
+          </div>
+          <button onclick="logout()" title="Đăng xuất" class="px-2 py-1 rounded-lg bg-red-600/20 hover:bg-red-600 text-red-200 hover:text-white text-xs transition">Thoát</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- NAVIGATION TABS -->
+    <nav class="bg-white text-slate-600 border-b border-slate-200">
+      <div class="max-w-7xl mx-auto px-2 sm:px-5 flex overflow-x-auto no-scrollbar">
+        <button onclick="switchTab('dashboard')" id="nav-dashboard" class="tab-btn whitespace-nowrap px-3.5 py-2.5 text-xs sm:text-sm border-b-3 border-transparent hover:text-blue-700 transition">📊 Tổng quan</button>
+        <button onclick="switchTab('master')" id="nav-master" class="tab-btn whitespace-nowrap px-3.5 py-2.5 text-xs sm:text-sm border-b-3 border-transparent hover:text-blue-700 transition">🔧 Danh sách máy (<span id="badgeMasterCount">0</span>)</button>
+        <button onclick="switchTab('req')" id="nav-req" class="tab-btn whitespace-nowrap px-3.5 py-2.5 text-xs sm:text-sm border-b-3 border-transparent hover:text-blue-700 transition">📋 Định mức</button>
+        <button onclick="switchTab('damaged')" id="nav-damaged" class="tab-btn whitespace-nowrap px-3.5 py-2.5 text-xs sm:text-sm border-b-3 border-transparent hover:text-blue-700 transition">⚠️ Nhật ký hỏng (<span id="badgePendingDmg">0</span>)</button>
+        <button onclick="switchTab('purchase')" id="nav-purchase" class="tab-btn whitespace-nowrap px-3.5 py-2.5 text-xs sm:text-sm border-b-3 border-transparent hover:text-blue-700 transition">🛒 Mua sắm & Chi phí</button>
+      </div>
+    </nav>
+  </header>
+
+  <!-- MAIN CONTENT -->
+  <main class="max-w-7xl w-full mx-auto px-3 sm:px-5 py-4 flex-1 pb-24">
+
+    <!-- OFFLINE NOTICE BANNER -->
+    <div id="offlineCloudHint" class="hidden mb-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900">
+      <div>⚠️ Đang chạy ở <strong>Chế độ Offline</strong> (dữ liệu chỉ lưu cục bộ trên máy này). Gắn URL & Anon Key từ <strong>Supabase</strong> để đồng bộ trực tuyến giữa máy tính công ty & điện thoại.</div>
+      <button onclick="openCloudConfigModal()" class="px-3 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold">⚡ Kết nối Supabase</button>
+    </div>
+
+    <!-- TAB 1: DASHBOARD -->
+    <section id="tab-dashboard" class="tab-section space-y-4">
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200">
+          <div class="text-[11px] font-semibold text-slate-500 uppercase">Tổng thiết bị</div>
+          <div id="kpiTotal" class="text-2xl font-black text-slate-800 mt-1">0</div>
+        </div>
+        <div class="bg-white p-3.5 rounded-xl shadow-sm border border-emerald-200">
+          <div class="text-[11px] font-semibold text-emerald-600 uppercase">Đang OK</div>
+          <div id="kpiOk" class="text-2xl font-black text-emerald-600 mt-1">0</div>
+        </div>
+        <div class="bg-white p-3.5 rounded-xl shadow-sm border border-red-200">
+          <div class="text-[11px] font-semibold text-red-600 uppercase">Hư hỏng (NG)</div>
+          <div id="kpiNg" class="text-2xl font-black text-red-600 mt-1">0</div>
+        </div>
+        <div class="bg-white p-3.5 rounded-xl shadow-sm border border-amber-200">
+          <div class="text-[11px] font-semibold text-amber-600 uppercase">Đang sửa</div>
+          <div id="kpiRepair" class="text-2xl font-black text-amber-600 mt-1">0</div>
+        </div>
+        <div class="bg-white p-3.5 rounded-xl shadow-sm border border-blue-200">
+          <div class="text-[11px] font-semibold text-blue-600 uppercase">Số khu vực</div>
+          <div id="kpiTeams" class="text-2xl font-black text-blue-700 mt-1">0</div>
+        </div>
+        <div class="bg-white p-3.5 rounded-xl shadow-sm border border-purple-200">
+          <div class="text-[11px] font-semibold text-purple-600 uppercase">Tổng chi phí</div>
+          <div id="kpiCost" class="text-lg sm:text-xl font-black text-purple-700 mt-1 truncate">0 đ</div>
+        </div>
+      </div>
+
+      <!-- NG ALERT BANNER -->
+      <div id="ngAlertBox" class="hidden bg-red-50 border border-red-200 rounded-xl p-3.5">
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <div class="font-bold text-red-800 text-sm flex items-center gap-1.5">🚨 Thiết bị đang NG / Cần xử lý gấp</div>
+          <button onclick="jumpToStatus('NG')" class="text-xs font-semibold text-red-700 underline">Xem tất cả NG →</button>
+        </div>
+        <div id="ngAlertList" class="flex flex-wrap gap-2"></div>
+      </div>
+
+      <!-- 10 TEAM CARDS -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="font-bold text-slate-800 text-sm sm:text-base">🏭 Trạng thái theo Khu vực (nhấn để xem máy)</h2>
+          <span id="lastUpdateMeta" class="text-[11px] text-slate-500"></span>
+        </div>
+        <div id="teamCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3"></div>
+      </div>
+
+      <!-- CHARTS -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="lg:col-span-2 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+          <h3 class="font-bold text-sm text-slate-700 mb-3">Phân bổ thiết bị OK vs NG/Repair theo Khu vực</h3>
+          <div class="h-64"><canvas id="teamBarChart"></canvas></div>
+        </div>
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+          <h3 class="font-bold text-sm text-slate-700 mb-3">Tỷ trọng theo Loại thiết bị</h3>
+          <div class="h-64"><canvas id="typeDoughnutChart"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: MASTER LIST -->
+    <section id="tab-master" class="tab-section hidden space-y-3">
+      <div class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-2 items-center justify-between">
+        <div class="flex flex-wrap gap-2 flex-1 min-w-[240px]">
+          <input id="searchMaster" oninput="renderMaster()" type="text" placeholder="🔍 Tìm mã máy, tên, serial..." class="flex-1 min-w-[160px] px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+          <select id="filterTeam" onchange="renderMaster()" class="px-2.5 py-2 border border-slate-300 rounded-lg text-xs sm:text-sm bg-white"></select>
+          <select id="filterType" onchange="renderMaster()" class="px-2.5 py-2 border border-slate-300 rounded-lg text-xs sm:text-sm bg-white"></select>
+          <select id="filterStatus" onchange="renderMaster()" class="px-2.5 py-2 border border-slate-300 rounded-lg text-xs sm:text-sm bg-white">
+            <option value="">Tất cả trạng thái</option>
+            <option value="OK">OK</option>
+            <option value="NG">NG</option>
+            <option value="Under Repair">Under Repair</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="openCategoryModal()" class="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs sm:text-sm font-semibold transition">⚙️ Loại máy & Khu vực</button>
+          <button onclick="openItemModal()" class="px-3.5 py-2 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-xs sm:text-sm font-semibold shadow-sm transition">+ Thêm thiết bị</button>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="bg-slate-100 text-slate-700 border-b border-slate-200">
+                <th class="py-2.5 px-3 font-bold">Mã kiểm soát</th>
+                <th class="py-2.5 px-3 font-bold">Thiết bị (EN / VI)</th>
+                <th class="py-2.5 px-3 font-bold">Khu vực</th>
+                <th class="py-2.5 px-3 font-bold">Trạng thái</th>
+                <th class="py-2.5 px-3 font-bold">Model / Serial / Ghi chú</th>
+                <th class="py-2.5 px-3 font-bold text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="masterTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+        <div id="masterFooter" class="px-4 py-2.5 bg-slate-50 border-t border-slate-200 text-xs text-slate-500"></div>
+      </div>
+    </section>
+
+    <!-- TAB 3: TEAM REQUIREMENT -->
+    <section id="tab-req" class="tab-section hidden space-y-3">
+      <div class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <span class="text-xs sm:text-sm font-semibold text-slate-700">Lọc khu vực:</span>
+          <select id="filterReqTeam" onchange="renderRequirements()" class="px-3 py-1.5 border border-slate-300 rounded-lg text-xs sm:text-sm bg-white"></select>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs text-slate-500 hidden md:inline">💡 Sửa trực tiếp <strong>Standard Qty</strong> để tự đồng bộ.</span>
+          <button onclick="openAddReqModal()" class="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold shadow-sm transition">+ Thêm định mức</button>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="bg-slate-100 text-slate-700 border-b border-slate-200">
+                <th class="py-2.5 px-3 font-bold">Khu vực</th>
+                <th class="py-2.5 px-3 font-bold">Mã nhóm</th>
+                <th class="py-2.5 px-3 font-bold">Thiết bị</th>
+                <th class="py-2.5 px-3 font-bold text-center">Standard</th>
+                <th class="py-2.5 px-3 font-bold text-center">Actual</th>
+                <th class="py-2.5 px-3 font-bold text-center">OK</th>
+                <th class="py-2.5 px-3 font-bold text-center">NG/Repair</th>
+                <th class="py-2.5 px-3 font-bold text-center">Gap</th>
+                <th class="py-2.5 px-3 font-bold">Hành động</th>
+              </tr>
+            </thead>
+            <tbody id="reqTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: DAMAGED LOG -->
+    <section id="tab-damaged" class="tab-section hidden space-y-3">
+      <div class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap gap-2 flex-1 min-w-[240px]">
+          <input id="searchDmg" oninput="renderDamaged()" type="text" placeholder="🔍 Tìm mã máy, lỗi, PIC, mã phiếu..." class="flex-1 min-w-[160px] px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" />
+          <select id="filterDmgTeam" onchange="renderDamaged()" class="px-2.5 py-2 border border-slate-300 rounded-lg text-xs sm:text-sm bg-white"></select>
+          <select id="filterDmgStatus" onchange="renderDamaged()" class="px-2.5 py-2 border border-slate-300 rounded-lg text-xs sm:text-sm bg-white">
+            <option value="all">Tất cả phiếu</option>
+            <option value="pending">⏳ Chưa xong (Pending)</option>
+            <option value="done">✅ Đã hoàn thành (Done)</option>
+          </select>
+        </div>
+        <button onclick="openReportDamageModal()" class="px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-semibold shadow-sm transition">+ Ghi nhận hư hỏng</button>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="bg-slate-100 text-slate-700 border-b border-slate-200">
+                <th class="py-2.5 px-3 font-bold">#</th>
+                <th class="py-2.5 px-3 font-bold">Ngày báo</th>
+                <th class="py-2.5 px-3 font-bold">PIC</th>
+                <th class="py-2.5 px-3 font-bold">Khu vực</th>
+                <th class="py-2.5 px-3 font-bold">Thiết bị</th>
+                <th class="py-2.5 px-3 font-bold">Control No.</th>
+                <th class="py-2.5 px-3 font-bold">Tình trạng lỗi & Hướng xử lý</th>
+                <th class="py-2.5 px-3 font-bold">Ghi chú / Mã phiếu</th>
+                <th class="py-2.5 px-3 font-bold">Hoàn thành</th>
+                <th class="py-2.5 px-3 font-bold text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="dmgTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+        <div id="dmgFooter" class="px-4 py-2.5 bg-slate-50 border-t border-slate-200 text-xs text-slate-500"></div>
+      </div>
+    </section>
+
+    <!-- TAB 5: PURCHASE & COST -->
+    <section id="tab-purchase" class="tab-section hidden space-y-4">
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div class="bg-white p-3.5 rounded-xl shadow-sm border border-slate-200">
+          <div class="text-xs text-slate-500 font-semibold">Tổng yêu cầu (PR)</div>
+          <div id="pTotalCount" class="text-2xl font-black text-slate-800 mt-1">0</div>
+        </div>
+        <div class="bg-white p-3.5 rounded-xl shadow-sm border border-amber-200">
+          <div class="text-xs text-amber-600 font-semibold">Đang chờ nhận</div>
+          <div id="pPendingCount" class="text-2xl font-black text-amber-600 mt-1">0</div>
+        </div>
+        <div class="bg-white p-3.5 rounded-xl shadow-sm border border-blue-200">
+          <div class="text-xs text-blue-600 font-semibold">Chi phí mua mới</div>
+          <div id="pBuyCost" class="text-xl font-black text-blue-700 mt-1">0 đ</div>
+        </div>
+        <div class="bg-white p-3.5 rounded-xl shadow-sm border border-purple-200">
+          <div class="text-xs text-purple-600 font-semibold">Chi phí sửa chữa</div>
+          <div id="pRepairCost" class="text-xl font-black text-purple-700 mt-1">0 đ</div>
+        </div>
+      </div>
+
+      <div class="flex justify-end">
+        <button onclick="openPurchaseModal()" class="px-3.5 py-2 rounded-lg bg-purple-700 hover:bg-purple-800 text-white text-xs sm:text-sm font-semibold shadow-sm transition">+ Thêm yêu cầu mua hàng (PR)</button>
+      </div>
+
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="bg-slate-100 text-slate-700 border-b border-slate-200">
+                <th class="py-2.5 px-3 font-bold">Mã PR</th>
+                <th class="py-2.5 px-3 font-bold">Ngày YC / Duyệt / Nhận</th>
+                <th class="py-2.5 px-3 font-bold">Khu vực</th>
+                <th class="py-2.5 px-3 font-bold">Thiết bị & Lý do</th>
+                <th class="py-2.5 px-3 font-bold text-center">SL</th>
+                <th class="py-2.5 px-3 font-bold text-right">Tổng tiền</th>
+                <th class="py-2.5 px-3 font-bold">Trạng thái</th>
+                <th class="py-2.5 px-3 font-bold text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="purchTableBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ==================== FLOATING AI ASSISTANT ==================== -->
+<button id="aiFabBtn" onclick="toggleAiChat()" class="hidden fixed bottom-4 right-4 z-40 px-4 py-3 rounded-full bg-gradient-to-r from-emerald-700 to-teal-700 hover:from-emerald-800 hover:to-teal-800 text-white shadow-xl flex items-center gap-2 font-semibold text-sm transition active:scale-95">
+  <span class="text-lg">🤖</span><span>Trợ lý AI</span>
+</button>
+
+<div id="aiChatPanel" class="hidden fixed bottom-4 right-4 left-4 sm:left-auto sm:w-[410px] h-[75vh] sm:h-[570px] z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+  <div class="bg-gradient-to-r from-emerald-700 to-teal-700 text-white px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <span class="text-xl">🤖</span>
+      <div>
+        <div class="font-bold text-sm leading-tight">POD AI Assistant</div>
+        <div id="aiKeyIndicator" class="text-[11px] text-emerald-100">Chế độ Phân tích Nhanh (Không cần Key)</div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1.5">
+      <button onclick="openAiKeyModal()" title="Gắn thêm Gemini API Key để chat tự do" class="px-2 py-1 rounded bg-white/15 hover:bg-white/25 text-xs">🔑 Key</button>
+      <button onclick="clearAiChat()" title="Xóa hội thoại" class="px-2 py-1 rounded bg-white/15 hover:bg-white/25 text-xs">🗑️</button>
+      <button onclick="toggleAiChat()" class="w-7 h-7 rounded bg-white/15 hover:bg-white/25 font-bold text-sm">✕</button>
+    </div>
+  </div>
+
+  <div class="px-3 py-2 bg-slate-50 border-b border-slate-200 flex gap-1.5 overflow-x-auto no-scrollbar">
+    <button onclick="askQuickAi('Liệt kê chi tiết các máy đang NG cần xử lý gấp')" class="whitespace-nowrap px-2.5 py-1 rounded-full bg-white border border-slate-300 hover:border-emerald-500 text-[11px] font-medium text-slate-700">🚨 Máy NG gấp</button>
+    <button onclick="askQuickAi('Kiểm tra khu vực nào đang thiếu hoặc dư định mức')" class="whitespace-nowrap px-2.5 py-1 rounded-full bg-white border border-slate-300 hover:border-emerald-500 text-[11px] font-medium text-slate-700">⚖️ Thiếu/dư định mức</button>
+    <button onclick="askQuickAi('Soạn báo cáo nhanh tình hình thiết bị hôm nay')" class="whitespace-nowrap px-2.5 py-1 rounded-full bg-white border border-slate-300 hover:border-emerald-500 text-[11px] font-medium text-slate-700">📝 Báo cáo hôm nay</button>
+    <button onclick="askQuickAi('Liệt kê các phiếu hư hỏng chưa Done')" class="whitespace-nowrap px-2.5 py-1 rounded-full bg-white border border-slate-300 hover:border-emerald-500 text-[11px] font-medium text-slate-700">⏳ Phiếu chưa Done</button>
+  </div>
+
+  <div id="aiMessages" class="flex-1 overflow-y-auto p-3.5 space-y-3 bg-slate-50/50 text-sm"></div>
+
+  <form onsubmit="sendAiMessage(event)" class="p-2.5 bg-white border-t border-slate-200 flex gap-2">
+    <input id="aiInput" type="text" placeholder="Hỏi mã máy (VD: AI-I-011), xưởng, báo cáo..." class="flex-1 px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+    <button id="aiSendBtn" type="submit" class="px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-sm">Gửi</button>
+  </form>
+</div>
+
+<!-- ==================== MODALS ==================== -->
+
+<!-- ITEM MODAL (V2: HỖ TRỢ THÊM LOẠI THIẾT BỊ & KHU VỰC NGAY TẠI CHỖ) -->
+<div id="itemModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4 overflow-y-auto">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden my-auto">
+    <div class="px-5 py-3.5 bg-slate-900 text-white flex justify-between items-center">
+      <h3 id="itemModalTitle" class="font-bold text-sm">Thêm thiết bị mới</h3>
+      <button onclick="closeModal('itemModal')" class="text-slate-300 hover:text-white">✕</button>
+    </div>
+    <form onsubmit="saveItemForm(event)" class="p-5 space-y-3 text-sm">
+      <input type="hidden" id="editItemOrigId" />
+
+      <!-- LOẠI THIẾT BỊ + THÊM NHANH -->
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <label class="block text-xs font-semibold text-slate-600">Loại thiết bị</label>
+          <button type="button" onclick="toggleQuickAddType()" class="text-[11px] font-bold text-blue-700 hover:underline">+ Thêm loại thiết bị mới</button>
+        </div>
+        <select id="itemTypeSelect" onchange="suggestNextControlNumber()" class="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"></select>
+
+        <div id="quickAddTypeBox" class="hidden mt-2 p-3 rounded-xl bg-blue-50 border border-blue-200 space-y-2">
+          <div class="text-xs font-bold text-blue-900">✨ Tạo loại thiết bị mới (tự lưu lên Supabase)</div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <input id="qTypeEn" type="text" placeholder="Tên EN (vd: Torque Wrench)" class="px-2.5 py-1.5 border border-blue-300 rounded-lg text-xs bg-white" />
+            <input id="qTypeVi" type="text" placeholder="Tên VI (vd: Cờ lê lực)" class="px-2.5 py-1.5 border border-blue-300 rounded-lg text-xs bg-white" />
+            <input id="qTypePrefix" type="text" placeholder="Mã nhóm (vd: TO-W-)" class="px-2.5 py-1.5 border border-blue-300 rounded-lg text-xs font-mono uppercase bg-white" />
+          </div>
+          <div class="flex justify-end gap-1.5">
+            <button type="button" onclick="toggleQuickAddType(false)" class="px-2.5 py-1 rounded bg-white border border-slate-300 text-xs">Hủy</button>
+            <button type="button" onclick="saveQuickEquipType()" class="px-3 py-1 rounded bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold">Lưu loại này</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Mã kiểm soát (Control No.)</label>
+          <input id="itemCtrlId" type="text" required class="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono font-bold" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Trạng thái</label>
+          <select id="itemStatusSelect" class="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white">
+            <option value="OK">OK</option>
+            <option value="NG">NG</option>
+            <option value="Under Repair">Under Repair</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- KHU VỰC + THÊM NHANH -->
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <label class="block text-xs font-semibold text-slate-600">Khu vực (Team)</label>
+          <button type="button" onclick="toggleQuickAddTeam()" class="text-[11px] font-bold text-emerald-700 hover:underline">+ Thêm khu vực mới</button>
+        </div>
+        <select id="itemTeamSelect" class="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"></select>
+
+        <div id="quickAddTeamBox" class="hidden mt-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex gap-2">
+          <input id="qTeamName" type="text" placeholder="Tên khu vực mới (vd: QA Team)" class="flex-1 px-2.5 py-1.5 border border-emerald-300 rounded-lg text-xs bg-white" />
+          <button type="button" onclick="saveQuickTeam()" class="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold">Thêm</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Hãng / Model (tùy chọn)</label>
+          <input id="itemModel" type="text" placeholder="VD: Hanaco V172, Keyang..." class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs sm:text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Số Serial (S/N)</label>
+          <input id="itemSerial" type="text" placeholder="VD: 2605022" class="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono text-xs sm:text-sm" />
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Ghi chú thêm</label>
+        <input id="itemNote" type="text" placeholder="VD: Giao kèm 2 cục pin ngày 09-10-2026..." class="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" onclick="closeModal('itemModal')" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">Hủy</button>
+        <button type="submit" class="px-4 py-2 rounded-lg bg-blue-700 hover:bg-blue-800 text-white font-semibold">Lưu thiết bị</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- REPORT / EDIT DAMAGE MODAL (V2: THÊM MỚI & CHỈNH SỬA PHIẾU HỎNG) -->
+<div id="damageModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4 overflow-y-auto">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden my-auto">
+    <div class="px-5 py-3.5 bg-red-700 text-white flex justify-between items-center">
+      <h3 id="dmgModalTitle" class="font-bold text-sm">⚠️ Ghi nhận hư hỏng / Sửa chữa</h3>
+      <button onclick="closeModal('damageModal')" class="text-red-100 hover:text-white">✕</button>
+    </div>
+    <form onsubmit="saveDamageForm(event)" class="p-5 space-y-3 text-sm">
+      <input type="hidden" id="editDmgNo" value="" />
+      <datalist id="masterCtrlDatalist"></datalist>
+      <datalist id="equipNameDatalist"></datalist>
+      <datalist id="teamNameDatalist"></datalist>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-semibold text-slate-600">Control No. (chọn hoặc gõ)</label>
+            <button type="button" onclick="generateNextDamagedCode()" class="text-[11px] font-bold text-red-700 hover:underline">⚡ Tạo mã hỏng mới</button>
+          </div>
+          <input id="dmgCtrl" list="masterCtrlDatalist" oninput="onDmgCtrlInput()" type="text" required placeholder="VD: AI-I-011 hoặc BE-M-155" class="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono font-bold" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Ngày báo hỏng</label>
+          <input id="dmgDate" type="date" required class="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Người báo (PIC)</label>
+          <input id="dmgPic" type="text" required class="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Khu vực</label>
+          <input id="dmgTeam" list="teamNameDatalist" type="text" required placeholder="Chọn hoặc nhập khu vực" class="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white" />
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Thiết bị</label>
+        <input id="dmgItem" list="equipNameDatalist" type="text" required placeholder="Chọn hoặc nhập tên thiết bị" class="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Tình trạng / Mô tả lỗi</label>
+        <input id="dmgIssue" type="text" placeholder="VD: Xì hơi cò bóp, kẹt bạc đạn, yếu lực bắn, cháy motor..." class="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Hướng xử lý</label>
+          <select id="dmgActionType" class="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-xs sm:text-sm">
+            <option value="Chờ kiểm tra">Chờ kiểm tra</option>
+            <option value="Sửa nội bộ">Sửa nội bộ</option>
+            <option value="Gửi sửa ngoài">Gửi sửa ngoài</option>
+            <option value="Đổi máy mới">Đổi máy mới</option>
+            <option value="Chờ mua mới (PR)">Chờ mua mới (PR)</option>
+            <option value="Thanh lý (Scrap)">Thanh lý (Scrap)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Chi phí sửa (VND)</label>
+          <input id="dmgRepairCost" type="number" min="0" value="0" class="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Mã phiếu / Ghi chú</label>
+          <input id="dmgRemark" type="text" placeholder="VD: 202611-V310-0215 / MRR..." class="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Ngày hoàn thành (Done)</label>
+          <input id="dmgDone" type="text" placeholder="Để trống nếu chưa xong" class="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+        </div>
+      </div>
+
+      <div id="dmgMasterSyncRow">
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Đồng bộ trạng thái trong Master List</label>
+        <select id="dmgNewStatus" class="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white">
+          <option value="NG">Đổi sang NG (Hư hỏng)</option>
+          <option value="Under Repair">Đổi sang Under Repair (Đang sửa chữa)</option>
+          <option value="OK">Đổi sang OK (Đã sửa xong / đổi mới)</option>
+          <option value="KEEP">Không đổi Master List (chỉ lưu nhật ký)</option>
+        </select>
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" onclick="closeModal('damageModal')" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">Hủy</button>
+        <button type="submit" class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold">Lưu phiếu hỏng</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- CATEGORY MANAGER MODAL (LOẠI THIẾT BỊ & KHU VỰC) -->
+<div id="categoryModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4 overflow-y-auto">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden my-auto">
+    <div class="px-5 py-3.5 bg-slate-900 text-white flex justify-between items-center">
+      <h3 class="font-bold text-sm">⚙️ Quản lý Loại thiết bị & Khu vực (Tự đồng bộ Supabase)</h3>
+      <button onclick="closeModal('categoryModal')" class="text-slate-300 hover:text-white">✕</button>
+    </div>
+    <div class="p-5 space-y-5 text-sm max-h-[80vh] overflow-y-auto">
+      <!-- EQUIPMENT TYPES -->
+      <div class="space-y-2.5">
+        <h4 class="font-bold text-slate-800 text-xs uppercase tracking-wide">1. Danh mục Loại thiết bị (<span id="catTypeCount">0</span>)</h4>
+        <form onsubmit="addEquipTypeFromManager(event)" class="grid grid-cols-1 sm:grid-cols-4 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <input id="mTypeEn" type="text" required placeholder="Tên tiếng Anh (Item Name)" class="px-2.5 py-2 border border-slate-300 rounded-lg text-xs bg-white" />
+          <input id="mTypeVi" type="text" required placeholder="Tên tiếng Việt" class="px-2.5 py-2 border border-slate-300 rounded-lg text-xs bg-white" />
+          <input id="mTypePrefix" type="text" required placeholder="Mã nhóm (vd: TO-W-)" class="px-2.5 py-2 border border-slate-300 rounded-lg text-xs font-mono uppercase bg-white" />
+          <button type="submit" class="px-3 py-2 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-xs font-semibold">+ Thêm loại</button>
+        </form>
+        <div class="max-h-48 overflow-y-auto border border-slate-200 rounded-xl">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-100 text-slate-700 sticky top-0">
+              <tr>
+                <th class="p-2">Mã nhóm</th>
+                <th class="p-2">Tên tiếng Anh</th>
+                <th class="p-2">Tên tiếng Việt</th>
+                <th class="p-2 text-right">Xóa</th>
+              </tr>
+            </thead>
+            <tbody id="catTypesBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TEAMS -->
+      <div class="space-y-2.5 pt-2 border-t border-slate-200">
+        <h4 class="font-bold text-slate-800 text-xs uppercase tracking-wide">2. Danh sách Khu vực / Xưởng (<span id="catTeamCount">0</span>)</h4>
+        <form onsubmit="addTeamFromManager(event)" class="flex gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <input id="mTeamName" type="text" required placeholder="Tên khu vực mới (vd: QA Team, Maintenance Team...)" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-xs bg-white" />
+          <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold">+ Thêm khu vực</button>
+        </form>
+        <div id="catTeamsWrap" class="flex flex-wrap gap-2"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADD REQUIREMENT MODAL -->
+<div id="addReqModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+    <div class="px-5 py-3.5 bg-emerald-800 text-white flex justify-between items-center">
+      <h3 class="font-bold text-sm">+ Thêm dòng Định mức Khu vực</h3>
+      <button onclick="closeModal('addReqModal')" class="text-emerald-200 hover:text-white">✕</button>
+    </div>
+    <form onsubmit="saveAddReqForm(event)" class="p-5 space-y-3 text-sm">
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Khu vực (Team)</label>
+        <select id="reqNewTeam" class="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"></select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Loại thiết bị</label>
+        <select id="reqNewType" class="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"></select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Định mức chuẩn (Standard Qty)</label>
+        <input id="reqNewStd" type="number" min="1" value="1" required class="w-full px-3 py-2 border border-slate-300 rounded-lg font-bold" />
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" onclick="closeModal('addReqModal')" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">Hủy</button>
+        <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold">Lưu định mức</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- PURCHASE MODAL -->
+<div id="purchaseModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4 overflow-y-auto">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden my-auto">
+    <div class="px-5 py-3.5 bg-purple-800 text-white flex justify-between items-center">
+      <h3 id="purchModalTitle" class="font-bold text-sm">Thêm yêu cầu mua hàng (PR)</h3>
+      <button onclick="closeModal('purchaseModal')" class="text-purple-200 hover:text-white">✕</button>
+    </div>
+    <form onsubmit="savePurchaseForm(event)" class="p-5 space-y-3 text-sm">
+      <input type="hidden" id="editPurchIdx" value="-1" />
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Mã PR</label>
+          <input id="pId" type="text" required class="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono font-bold" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Khu vực đề xuất</label>
+          <select id="pTeam" class="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"></select>
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Tên thiết bị mua mới / sửa</label>
+        <input id="pEquipment" type="text" required class="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Lý do</label>
+        <textarea id="pReason" rows="2" class="w-full px-3 py-2 border border-slate-300 rounded-lg"></textarea>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Ngày YC</label>
+          <input id="pReqDate" type="date" class="w-full px-2 py-2 border border-slate-300 rounded-lg text-xs" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Ngày duyệt</label>
+          <input id="pAppDate" type="date" class="w-full px-2 py-2 border border-slate-300 rounded-lg text-xs" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Ngày nhận</label>
+          <input id="pRecDate" type="date" class="w-full px-2 py-2 border border-slate-300 rounded-lg text-xs" />
+        </div>
+      </div>
+      <div class="grid grid-cols-3 gap-2">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Số lượng</label>
+          <input id="pQty" type="number" min="1" value="1" class="w-full px-2.5 py-2 border border-slate-300 rounded-lg" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Đơn giá (VND)</label>
+          <input id="pUnitPrice" type="number" min="0" value="0" class="w-full px-2.5 py-2 border border-slate-300 rounded-lg" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Phí sửa (VND)</label>
+          <input id="pRepair" type="number" min="0" value="0" class="w-full px-2.5 py-2 border border-slate-300 rounded-lg" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-1">Người đề xuất / Ghi chú</label>
+        <input id="pRemark" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" onclick="closeModal('purchaseModal')" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">Hủy</button>
+        <button type="submit" class="px-4 py-2 rounded-lg bg-purple-700 hover:bg-purple-800 text-white font-semibold">Lưu PR</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- SUPABASE CLOUD CONFIG MODAL -->
+<div id="cloudConfigModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4 overflow-y-auto">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden my-auto">
+    <div class="px-5 py-3.5 bg-emerald-800 text-white flex justify-between items-center">
+      <h3 class="font-bold text-sm">⚡ Kết nối Supabase Cloud (Miễn phí)</h3>
+      <button onclick="closeModal('cloudConfigModal')" class="text-emerald-200 hover:text-white">✕</button>
+    </div>
+    <div class="p-5 space-y-3 text-xs sm:text-sm">
+      <p class="text-slate-600 leading-relaxed">
+        Vào dự án trên <a href="https://supabase.com/dashboard" target="_blank" class="text-emerald-700 underline font-semibold">supabase.com</a> → <strong>Project Settings → Data API (hoặc API Keys)</strong> để copy 2 dòng sau:
+      </p>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Project URL</label>
+        <input id="sbUrlInput" type="text" placeholder="https://xxxxxxxxxxxx.supabase.co" class="w-full px-3 py-2 border border-slate-300 rounded-xl font-mono text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none" />
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Publishable / anon public Key</label>
+        <textarea id="sbKeyInput" rows="3" placeholder="eyJhbGciOiJIUzI1NiIs... hoặc sb_publishable_..." class="w-full p-2.5 border border-slate-300 rounded-xl font-mono text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"></textarea>
+      </div>
+      <p class="text-[11px] text-slate-500">
+        💡 Muốn mọi điện thoại mở link GitHub Pages là tự kết nối sẵn không cần nhập tay, hãy dán 2 giá trị này vào dòng <code>DEFAULT_SUPABASE_URL</code> và <code>DEFAULT_SUPABASE_ANON_KEY</code> trong file <code>index.html</code> trên GitHub.
+      </p>
+      <div class="flex justify-between items-center pt-1">
+        <button onclick="clearLocalCloudConfig()" class="px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 text-xs font-semibold">Xóa trên máy này</button>
+        <div class="flex gap-2">
+          <button onclick="closeModal('cloudConfigModal')" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">Đóng</button>
+          <button onclick="saveCloudConfigFromModal()" class="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-semibold">Lưu & Kết nối</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- USERS MANAGEMENT MODAL (ADMIN ONLY) -->
+<div id="usersModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4 overflow-y-auto">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden my-auto">
+    <div class="px-5 py-3.5 bg-slate-900 text-white flex justify-between items-center">
+      <h3 class="font-bold text-sm">👥 Quản lý Tài khoản & Phân quyền</h3>
+      <button onclick="closeModal('usersModal')" class="text-slate-300 hover:text-white">✕</button>
+    </div>
+    <div class="p-5 space-y-4 text-sm">
+      <div class="max-h-56 overflow-y-auto border border-slate-200 rounded-xl">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="p-2.5">Tài khoản</th>
+              <th class="p-2.5">Họ tên</th>
+              <th class="p-2.5">Quyền</th>
+              <th class="p-2.5 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+      <form onsubmit="addUserByAdmin(event)" class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+        <div class="font-bold text-xs text-slate-700">+ Tạo tài khoản mới / Đổi mật khẩu (nhập trùng username để đổi MK)</div>
+        <div class="grid grid-cols-2 gap-2">
+          <input id="newUName" type="text" required placeholder="Tên đăng nhập (vd: to_drilling)" class="px-2.5 py-2 border border-slate-300 rounded-lg text-xs" />
+          <input id="newUPass" type="text" required placeholder="Mật khẩu mới" class="px-2.5 py-2 border border-slate-300 rounded-lg text-xs" />
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <input id="newUFull" type="text" required placeholder="Họ tên (vd: Anh Hưng)" class="px-2.5 py-2 border border-slate-300 rounded-lg text-xs" />
+          <select id="newURole" class="px-2.5 py-2 border border-slate-300 rounded-lg text-xs bg-white">
+            <option value="User">User (Xem & Báo hỏng)</option>
+            <option value="Admin">Admin (Toàn quyền)</option>
+          </select>
+        </div>
+        <div class="flex justify-end">
+          <button type="submit" class="px-3.5 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold">Lưu tài khoản</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- AI KEY SETTINGS MODAL -->
+<div id="aiKeyModal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+    <div class="px-5 py-3.5 bg-indigo-800 text-white flex justify-between items-center">
+      <h3 class="font-bold text-sm">🔑 Trợ lý ảo AI (Hỗ trợ cả Offline & Gemini)</h3>
+      <button onclick="closeModal('aiKeyModal')" class="text-indigo-200 hover:text-white">✕</button>
+    </div>
+    <div class="p-5 space-y-3 text-sm">
+      <p class="text-xs text-slate-600 leading-relaxed">
+        Trợ lý đã có sẵn <strong>Chế độ Phân tích Nhanh nội bộ</strong> (chạy ngay không cần API Key, không sợ tường lửa công ty chặn). Nếu muốn AI trả lời nâng cao bằng Gemini, bạn dán thêm API Key miễn phí từ <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-blue-600 underline font-semibold">Google AI Studio</a> vào đây (tùy chọn):
+      </p>
+      <input id="geminiKeyInput" type="password" placeholder="AIzaSy... (để trống nếu dùng chế độ nội bộ)" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none" />
+      <div class="flex justify-end gap-2 pt-1">
+        <button onclick="closeModal('aiKeyModal')" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">Đóng</button>
+        <button onclick="saveAiKey()" class="px-4 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold">Lưu cài đặt</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST NOTIFICATION -->
+<div id="toast" class="hidden fixed top-16 right-4 z-50 px-4 py-2.5 rounded-xl shadow-lg text-xs sm:text-sm font-semibold text-white bg-slate-900 transition"></div>
+
+<script>
+// =========================================================================
+// [BƯỚC 2 TRONG HƯỚNG DẪN] DÁN URL VÀ KEY SUPABASE CỦA BẠN VÀO 2 DÒNG DƯỚI
+// Ví dụ:
+// const DEFAULT_SUPABASE_URL = "https://abcdefghijklm.supabase.co";
+// const DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6...";
+// =========================================================================
+const DEFAULT_SUPABASE_URL = "https://ekwnzexmpyjssnhjrlnb.supabase.co";
+const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_q7gVUfhyFDZFApOtRonoDw_rD21W8QQ";
+
+// ==================== CONSTANTS & SEED DATA ====================
+const TABLE_NAME = 'pod_store';
+
+const DEFAULT_TEAMS = [
+  'Drilling Team', 'Turning Team', 'Gear Cutting Team', 'Packing Team',
+  'Assembly Team', 'Coating Team', 'After Treatment Team', 'IH Team',
+  'Manual Team', 'SZ & Visual'
+];
+
+const DEFAULT_EQUIP_TYPES = [
+  { prefix: 'AI-I-', en: 'Air Impact Wrench', vi: 'Súng bắn ốc' },
+  { prefix: 'AI-M-', en: 'Air micro grinder', vi: 'Máy mài bút' },
+  { prefix: 'BE-M-', en: 'Beveling machines', vi: 'Máy vát cạnh' },
+  { prefix: 'BE-S-', en: 'Belt Sander', vi: 'Máy mài nhám' },
+  { prefix: 'CO-D-', en: 'Cordless drill', vi: 'Máy khoan pin' },
+  { prefix: 'GR-S-', en: 'Grinding surface machine', vi: 'Máy mài mặt phẳng' },
+  { prefix: 'HA-C-', en: 'Handheld cutting', vi: 'Máy cắt cầm tay' },
+  { prefix: 'HA-D-', en: 'Handheld drill', vi: 'Máy khoan cầm tay' },
+  { prefix: 'LO-A-', en: 'Long air grinder', vi: 'Máy mài lỗ dài' },
+  { prefix: 'PDH-S-', en: 'Portable Direct Heat Sealer', vi: 'Máy hàn nhiệt' },
+  { prefix: 'PN-G-', en: 'Pneumatic nail gun', vi: 'Máy bắn đinh' },
+  { prefix: 'PS-A-', en: 'Pneumatic Sander Air', vi: 'Máy chà nhám hơi' },
+  { prefix: 'SH-A-', en: 'Short air grinder', vi: 'Máy mài lỗ ngắn' }
+];
+
+function getTeams() {
+  return (state.config && Array.isArray(state.config.teams) && state.config.teams.length)
+    ? state.config.teams : DEFAULT_TEAMS;
+}
+function getEquipTypes() {
+  return (state.config && Array.isArray(state.config.equipTypes) && state.config.equipTypes.length)
+    ? state.config.equipTypes : DEFAULT_EQUIP_TYPES;
+}
+function ensureConfigLists() {
+  if (!state.config) state.config = { geminiKey: '', lastUpdatedBy: '' };
+  if (!Array.isArray(state.config.teams) || !state.config.teams.length) {
+    state.config.teams = [...DEFAULT_TEAMS];
+  }
+  if (!Array.isArray(state.config.equipTypes) || !state.config.equipTypes.length) {
+    state.config.equipTypes = DEFAULT_EQUIP_TYPES.map(x => Object.assign({}, x));
+  }
+}
+
+const SEED_DATA = {
+  master: [{"id": "AI-I-001", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "AI-I-002", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "AI-I-003", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "AI-I-004", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "AI-I-005", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "AI-I-006", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "AI-I-007", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "AI-I-008", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "AI-I-009", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "AI-I-010", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "AI-I-011", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Drilling Team", "status": "NG", "note": ""}, {"id": "AI-I-012", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "AI-I-013", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "AI-I-014", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Turning Team", "status": "OK", "note": ""}, {"id": "AI-I-015", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Turning Team", "status": "OK", "note": ""}, {"id": "AI-I-016", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Turning Team", "status": "OK", "note": ""}, {"id": "AI-I-017", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Gear Cutting Team", "status": "NG", "note": ""}, {"id": "AI-I-018", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Gear Cutting Team", "status": "NG", "note": ""}, {"id": "AI-I-019", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Gear Cutting Team", "status": "OK", "note": ""}, {"id": "AI-I-020", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Gear Cutting Team", "status": "OK", "note": ""}, {"id": "AI-I-021", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Packing Team", "status": "OK", "note": ""}, {"id": "AI-I-022", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Packing Team", "status": "OK", "note": ""}, {"id": "AI-I-023", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Packing Team", "status": "OK", "note": ""}, {"id": "AI-I-024", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Assembly Team", "status": "OK", "note": ""}, {"id": "AI-I-025", "en": "Air Impact Wrench", "vi": "Súng bắn ốc", "team": "Assembly Team", "status": "OK", "note": ""}, {"id": "AI-M-001", "en": "Air micro grinder", "vi": "Máy mài bút", "team": "Turning Team", "status": "OK", "note": ""}, {"id": "AI-M-002", "en": "Air micro grinder", "vi": "Máy mài bút", "team": "Turning Team", "status": "OK", "note": ""}, {"id": "AI-M-003", "en": "Air micro grinder", "vi": "Máy mài bút", "team": "Turning Team", "status": "OK", "note": ""}, {"id": "AI-M-004", "en": "Air micro grinder", "vi": "Máy mài bút", "team": "After Treatment Team", "status": "OK", "note": ""}, {"id": "AI-M-005", "en": "Air micro grinder", "vi": "Máy mài bút", "team": "IH Team", "status": "OK", "note": ""}, {"id": "AI-M-006", "en": "Air micro grinder", "vi": "Máy mài bút", "team": "Manual Team", "status": "OK", "note": ""}, {"id": "AI-M-007", "en": "Air micro grinder", "vi": "Máy mài bút", "team": "SZ & Visual", "status": "OK", "note": ""}, {"id": "BE-M-001", "en": "Beveling machines", "vi": "Máy vát cạnh", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "BE-M-002", "en": "Beveling machines", "vi": "Máy vát cạnh", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "BE-M-003", "en": "Beveling machines", "vi": "Máy vát cạnh", "team": "Turning Team", "status": "OK", "note": ""}, {"id": "BE-M-004", "en": "Beveling machines", "vi": "Máy vát cạnh", "team": "Gear Cutting Team", "status": "NG", "note": ""}, {"id": "BE-M-005", "en": "Beveling machines", "vi": "Máy vát cạnh", "team": "Gear Cutting Team", "status": "OK", "note": ""}, {"id": "BE-M-006", "en": "Beveling machines", "vi": "Máy vát cạnh", "team": "Gear Cutting Team", "status": "OK", "note": ""}, {"id": "BE-M-007", "en": "Beveling machines", "vi": "Máy vát cạnh", "team": "Gear Cutting Team", "status": "OK", "note": ""}, {"id": "BE-M-008", "en": "Beveling machines", "vi": "Máy vát cạnh", "team": "Gear Cutting Team", "status": "OK", "note": ""}, {"id": "BE-M-009", "en": "Beveling machines", "vi": "Máy vát cạnh", "team": "Gear Cutting Team", "status": "OK", "note": ""}, {"id": "BE-M-010", "en": "Beveling machines", "vi": "Máy vát cạnh", "team": "Manual Team", "status": "OK", "note": ""}, {"id": "BE-M-011", "en": "Beveling machines", "vi": "Máy vát cạnh", "team": "SZ & Visual", "status": "OK", "note": ""}, {"id": "BE-S-001", "en": "Belt Sander", "vi": "Máy mài nhám", "team": "After Treatment Team", "status": "OK", "note": ""}, {"id": "CO-D-001", "en": "Cordless drill", "vi": "Máy khoan pin", "team": "Drilling Team", "status": "OK", "note": "6-10-26 giao cho Hưng 1 cục pin"}, {"id": "CO-D-002", "en": "Cordless drill", "vi": "Máy khoan pin", "team": "Turning Team", "status": "OK", "note": "Máy hư: 2024.6 0037850 -> Máy mới: 2026.3 47785"}, {"id": "CO-D-003", "en": "Cordless drill", "vi": "Máy khoan pin", "team": "Coating Team", "status": "OK", "note": ""}, {"id": "CO-D-004", "en": "Cordless drill", "vi": "Máy khoan pin", "team": "IH Team", "status": "OK", "note": ""}, {"id": "CO-D-005", "en": "Cordless drill", "vi": "Máy khoan pin", "team": "IH Team", "status": "OK", "note": ""}, {"id": "CO-D-006", "en": "Cordless drill", "vi": "Máy khoan pin", "team": "IH Team", "status": "OK", "note": ""}, {"id": "CO-D-007", "en": "Cordless drill", "vi": "Máy khoan pin", "team": "IH Team", "status": "OK", "note": "Loại lớn 1 pin 30-9-2026"}, {"id": "CO-D-008", "en": "Cordless drill", "vi": "Máy khoan pin", "team": "SZ & Visual", "status": "OK", "note": "Máy mới : 2026.4 48343"}, {"id": "CO-D-009", "en": "Cordless drill", "vi": "Máy khoan pin", "team": "Packing Team", "status": "OK", "note": "2 cục pin và 1 máy 09-10-2026"}, {"id": "GR-S-001", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "Turning Team", "status": "OK", "note": ""}, {"id": "GR-S-002", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "Turning Team", "status": "OK", "note": ""}, {"id": "GR-S-003", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "Gear Cutting Team", "status": "OK", "note": ""}, {"id": "GR-S-004", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "Gear Cutting Team", "status": "OK", "note": ""}, {"id": "GR-S-005", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "After Treatment Team", "status": "OK", "note": ""}, {"id": "GR-S-006", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "IH Team", "status": "OK", "note": ""}, {"id": "GR-S-007", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "IH Team", "status": "OK", "note": ""}, {"id": "GR-S-008", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "IH Team", "status": "OK", "note": ""}, {"id": "GR-S-009", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "IH Team", "status": "OK", "note": ""}, {"id": "GR-S-010", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "IH Team", "status": "OK", "note": ""}, {"id": "GR-S-011", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "Manual Team", "status": "OK", "note": ""}, {"id": "GR-S-012", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "SZ & Visual", "status": "OK", "note": "21090830 đổi sang máy mới 2640138 26026.01"}, {"id": "GR-S-013", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "SZ & Visual", "status": "OK", "note": ""}, {"id": "GR-S-014", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "Coating Team", "status": "OK", "note": ""}, {"id": "GR-S-015", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "Manual Team", "status": "OK", "note": ""}, {"id": "GR-S-016", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "Coating Team", "status": "OK", "note": "2026-09-22"}, {"id": "GR-S-017", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "SZ & Visual", "status": "OK", "note": "Máy nhỏ"}, {"id": "GR-S-018", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "SZ & Visual", "status": "OK", "note": "Máy nhỏ: SN: 2605022"}, {"id": "GR-S-019", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "Coating Team", "status": "OK", "note": "Máy mới: 2641087 2026.05"}, {"id": "GR-S-020", "en": "Grinding surface machine", "vi": "Máy mài mặt phẳng", "team": "Coating Team", "status": "OK", "note": "Máy mới: 2640123 2026.01"}, {"id": "HA-C-001", "en": "Handheld cutting", "vi": "Máy cắt cầm tay", "team": "Packing Team", "status": "OK", "note": ""}, {"id": "HA-D-001", "en": "Handheld drill", "vi": "Máy khoan cầm tay", "team": "Packing Team", "status": "OK", "note": ""}, {"id": "HA-D-002", "en": "Handheld drill", "vi": "Máy khoan cầm tay", "team": "Packing Team", "status": "OK", "note": ""}, {"id": "LO-A-001", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "LO-A-002", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "LO-A-003", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "LO-A-004", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "LO-A-005", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "LO-A-006", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "LO-A-007", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "LO-A-008", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "LO-A-009", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "Turning Team", "status": "OK", "note": ""}, {"id": "LO-A-010", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "Coating Team", "status": "OK", "note": "Máy mới: 26070071"}, {"id": "LO-A-011", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "Coating Team", "status": "OK", "note": "2026-09-22"}, {"id": "LO-A-012", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "SZ & Visual", "status": "OK", "note": ""}, {"id": "LO-A-013", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "SZ & Visual", "status": "OK", "note": ""}, {"id": "LO-A-014", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "SZ & Visual", "status": "OK", "note": ""}, {"id": "PDH-S-01", "en": "Portable Direct Heat Sealer", "vi": "Máy hàn nhiệt", "team": "Packing Team", "status": "OK", "note": "Hanaco V172"}, {"id": "PDH-S-02", "en": "Portable Direct Heat Sealer", "vi": "Máy hàn nhiệt", "team": "Packing Team", "status": "OK", "note": "Hanaco V172"}, {"id": "PDH-S-03", "en": "Portable Direct Heat Sealer", "vi": "Máy hàn nhiệt", "team": "Packing Team", "status": "OK", "note": "GE"}, {"id": "PDH-S-04", "en": "Portable Direct Heat Sealer", "vi": "Máy hàn nhiệt", "team": "Packing Team", "status": "OK", "note": "GE 4.11.26"}, {"id": "PN-G-001", "en": "Pneumatic nail gun", "vi": "Máy bắn đinh", "team": "Packing Team", "status": "OK", "note": ""}, {"id": "PN-G-002", "en": "Pneumatic nail gun", "vi": "Máy bắn đinh", "team": "Packing Team", "status": "OK", "note": ""}, {"id": "PN-G-003", "en": "Pneumatic nail gun", "vi": "Máy bắn đinh", "team": "Packing Team", "status": "OK", "note": ""}, {"id": "LO-A-015", "en": "Long air grinder", "vi": "Máy mài lỗ dài", "team": "Coating Team", "status": "OK", "note": ""}, {"id": "PS-A-001", "en": "Pneumatic Sander Air", "vi": "Máy chà nhám hơi", "team": "Coating Team", "status": "OK", "note": "2026-09-29"}, {"id": "PS-A-002", "en": "Pneumatic Sander Air", "vi": "Máy chà nhám hơi", "team": "Coating Team", "status": "OK", "note": "2026-09-30"}, {"id": "PS-A-004", "en": "Pneumatic Sander Air", "vi": "Máy chà nhám hơi", "team": "SZ & Visual", "status": "OK", "note": "Đổi sang máy mài mặt phẳng: 2440137 2026.01"}, {"id": "PS-A-003", "en": "Pneumatic Sander Air", "vi": "Máy chà nhám hơi", "team": "Coating Team", "status": "OK", "note": "2026-10-14"}, {"id": "PS-A-005", "en": "Pneumatic Sander Air", "vi": "Máy chà nhám hơi", "team": "Coating Team", "status": "OK", "note": "2026-10-26"}, {"id": "PS-A-006", "en": "Pneumatic Sander Air", "vi": "Máy chà nhám hơi", "team": "Coating Team", "status": "OK", "note": ""}, {"id": "PS-A-007", "en": "Pneumatic Sander Air", "vi": "Máy chà nhám hơi", "team": "Coating Team", "status": "OK", "note": ""}, {"id": "SH-A-001", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "SH-A-002", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "Drilling Team", "status": "OK", "note": ""}, {"id": "SH-A-003", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "Turning Team", "status": "OK", "note": ""}, {"id": "SH-A-004", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "Turning Team", "status": "OK", "note": ""}, {"id": "SH-A-005", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "After Treatment Team", "status": "OK", "note": ""}, {"id": "SH-A-006", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "After Treatment Team", "status": "OK", "note": ""}, {"id": "SH-A-007", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "After Treatment Team", "status": "OK", "note": ""}, {"id": "SH-A-008", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "After Treatment Team", "status": "OK", "note": ""}, {"id": "SH-A-009", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "IH Team", "status": "OK", "note": ""}, {"id": "SH-A-010", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "IH Team", "status": "OK", "note": ""}, {"id": "SH-A-011", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "IH Team", "status": "OK", "note": ""}, {"id": "SH-A-012", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "IH Team", "status": "OK", "note": ""}, {"id": "SH-A-013", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "IH Team", "status": "OK", "note": ""}, {"id": "SH-A-014", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "Manual Team", "status": "OK", "note": ""}, {"id": "SH-A-015", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "SZ & Visual", "status": "OK", "note": "25120204"}, {"id": "SH-A-016", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "SZ & Visual", "status": "OK", "note": "25112611"}, {"id": "SH-A-017", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "SZ & Visual", "status": "OK", "note": "26060970"}, {"id": "SH-A-018", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "SZ & Visual", "status": "OK", "note": "26070627: 26-10-2026"}, {"id": "SH-A-019", "en": "Short air grinder", "vi": "Máy mài lỗ ngắn", "team": "SZ & Visual", "status": "OK", "note": "26070686: 26-10-2026"}, {"id": "PS-A-008", "en": "Pneumatic Sander Air", "vi": "Máy chà nhám hơi", "team": "Coating Team", "status": "OK", "note": ""}],
+  requirements: [{"team": "Gear Cutting Team", "prefix": "AI-I-", "equip": "Air Impact Wrench / Súng bắn ốc", "std": 4}, {"team": "Drilling Team", "prefix": "AI-I-", "equip": "Air Impact Wrench / Súng bắn ốc", "std": 13}, {"team": "Turning Team", "prefix": "AI-I-", "equip": "Air Impact Wrench / Súng bắn ốc", "std": 3}, {"team": "Packing Team", "prefix": "AI-I-", "equip": "Air Impact Wrench / Súng bắn ốc", "std": 3}, {"team": "Assembly Team", "prefix": "AI-I-", "equip": "Air Impact Wrench / Súng bắn ốc", "std": 2}, {"team": "Turning Team", "prefix": "AI-M-", "equip": "Air micro grinder / Máy mài bút", "std": 3}, {"team": "After Treatment Team", "prefix": "AI-M-", "equip": "Air micro grinder / Máy mài bút", "std": 1}, {"team": "IH Team", "prefix": "AI-M-", "equip": "Air micro grinder / Máy mài bút", "std": 1}, {"team": "Manual Team", "prefix": "AI-M-", "equip": "Air micro grinder / Máy mài bút", "std": 1}, {"team": "SZ & Visual", "prefix": "AI-M-", "equip": "Air micro grinder / Máy mài bút", "std": 1}, {"team": "Gear Cutting Team", "prefix": "BE-M-", "equip": "Beveling machines / Máy vát cạnh", "std": 6}, {"team": "Drilling Team", "prefix": "BE-M-", "equip": "Beveling machines / Máy vát cạnh", "std": 2}, {"team": "Turning Team", "prefix": "BE-M-", "equip": "Beveling machines / Máy vát cạnh", "std": 1}, {"team": "Manual Team", "prefix": "BE-M-", "equip": "Beveling machines / Máy vát cạnh", "std": 1}, {"team": "SZ & Visual", "prefix": "BE-M-", "equip": "Beveling machines / Máy vát cạnh", "std": 1}, {"team": "After Treatment Team", "prefix": "BE-S-", "equip": "Belt Sander / Máy mài nhám", "std": 1}, {"team": "Drilling Team", "prefix": "CO-D-", "equip": "Cordless drill / Máy khoan pin", "std": 1}, {"team": "Turning Team", "prefix": "CO-D-", "equip": "Cordless drill / Máy khoan pin", "std": 1}, {"team": "Packing Team", "prefix": "CO-D-", "equip": "Cordless drill / Máy khoan pin", "std": 1}, {"team": "Coating Team", "prefix": "CO-D-", "equip": "Cordless drill / Máy khoan pin", "std": 1}, {"team": "IH Team", "prefix": "CO-D-", "equip": "Cordless drill / Máy khoan pin", "std": 3}, {"team": "SZ & Visual", "prefix": "CO-D-", "equip": "Cordless drill / Máy khoan pin", "std": 1}, {"team": "Coating Team", "prefix": "GR-S-", "equip": "Grinding surface machine / Máy mài mặt phẳng", "std": 4}, {"team": "Turning Team", "prefix": "GR-S-", "equip": "Grinding surface machine / Máy mài mặt phẳng", "std": 2}, {"team": "Gear Cutting Team", "prefix": "GR-S-", "equip": "Grinding surface machine / Máy mài mặt phẳng", "std": 2}, {"team": "After Treatment Team", "prefix": "GR-S-", "equip": "Grinding surface machine / Máy mài mặt phẳng", "std": 1}, {"team": "Manual Team", "prefix": "GR-S-", "equip": "Grinding surface machine / Máy mài mặt phẳng", "std": 2}, {"team": "IH Team", "prefix": "GR-S-", "equip": "Grinding surface machine / Máy mài mặt phẳng", "std": 5}, {"team": "SZ & Visual", "prefix": "GR-S-", "equip": "Grinding surface machine / Máy mài mặt phẳng", "std": 4}, {"team": "Packing Team", "prefix": "HA-C-", "equip": "Handheld cutting / Máy cắt cầm tay", "std": 1}, {"team": "Packing Team", "prefix": "HA-D-", "equip": "Handheld drill / Máy khoan cầm tay", "std": 2}, {"team": "Turning Team", "prefix": "LO-A-", "equip": "Long air grinder / Máy mài lỗ dài", "std": 1}, {"team": "Coating Team", "prefix": "LO-A-", "equip": "Long air grinder / Máy mài lỗ dài", "std": 3}, {"team": "SZ & Visual", "prefix": "LO-A-", "equip": "Long air grinder / Máy mài lỗ dài", "std": 3}, {"team": "Drilling Team", "prefix": "LO-A-", "equip": "Long air grinder / Máy mài lỗ dài", "std": 8}, {"team": "Packing Team", "prefix": "PDH-S", "equip": "Portable Direct Heat Sealer / Máy hàn nhiệt", "std": 4}, {"team": "Packing Team", "prefix": "PN-G-", "equip": "Pneumatic nail gun / Máy bắn đinh", "std": 3}, {"team": "Coating Team", "prefix": "PS-A-", "equip": "Pneumatic Sander Air / Máy chà nhám hơi", "std": 7}, {"team": "SZ & Visual", "prefix": "PS-A-", "equip": "Pneumatic Sander Air / Máy chà nhám hơi", "std": 1}, {"team": "Turning Team", "prefix": "SH-A-", "equip": "Short air grinder / Máy mài lỗ ngắn", "std": 2}, {"team": "After Treatment Team", "prefix": "SH-A-", "equip": "Short air grinder / Máy mài lỗ ngắn", "std": 4}, {"team": "IH Team", "prefix": "SH-A-", "equip": "Short air grinder / Máy mài lỗ ngắn", "std": 5}, {"team": "Manual Team", "prefix": "SH-A-", "equip": "Short air grinder / Máy mài lỗ ngắn", "std": 1}, {"team": "Drilling Team", "prefix": "SH-A-", "equip": "Short air grinder / Máy mài lỗ ngắn", "std": 2}, {"team": "SZ & Visual", "prefix": "SH-A-", "equip": "Short air grinder / Máy mài lỗ ngắn", "std": 5}],
+  damaged: [{"no": 1, "date": "13-10-25", "pic": "Nam", "team": "IH+GC", "item": "Beveling machines", "ctrl": "BE-M-1", "remark": "", "done": ""}, {"no": 2, "date": "13-10-25", "pic": "Nam", "team": "IH+GC", "item": "Beveling machines", "ctrl": "BE-M-2", "remark": "", "done": ""}, {"no": 3, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-3", "remark": "", "done": ""}, {"no": 4, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-4", "remark": "", "done": ""}, {"no": 5, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Grinding surface machine", "ctrl": "GR-S-5", "remark": "", "done": ""}, {"no": 6, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Grinding surface machine", "ctrl": "GR-S-6", "remark": "", "done": ""}, {"no": 7, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Grinding surface machine", "ctrl": "GR-S-7", "remark": "", "done": ""}, {"no": 8, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Grinding surface machine", "ctrl": "GR-S-8", "remark": "", "done": ""}, {"no": 9, "date": "15-10-25", "pic": "Hưng", "team": "Drilling", "item": "Short air grinder", "ctrl": "SH-A-9", "remark": "", "done": ""}, {"no": 10, "date": "15-10-25", "pic": "Hưng", "team": "Drilling", "item": "Short air grinder", "ctrl": "SH-A-10", "remark": "", "done": ""}, {"no": 11, "date": "15-10-25", "pic": "Hưng", "team": "Drilling", "item": "Long air grinder", "ctrl": "LO-A-11", "remark": "", "done": ""}, {"no": 12, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Air Impact Wrench", "ctrl": "AI-I-12", "remark": "", "done": ""}, {"no": 13, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Air Impact Wrench", "ctrl": "AI-I-13", "remark": "", "done": ""}, {"no": 14, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Air Impact Wrench", "ctrl": "AI-I-14", "remark": "", "done": ""}, {"no": 15, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Air Impact Wrench", "ctrl": "AI-I-15", "remark": "", "done": ""}, {"no": 16, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Air Impact Wrench", "ctrl": "AI-I-16", "remark": "", "done": ""}, {"no": 17, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Air Impact Wrench", "ctrl": "AI-I-17", "remark": "", "done": ""}, {"no": 18, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Air Impact Wrench", "ctrl": "AI-I-18", "remark": "", "done": ""}, {"no": 19, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Long air grinder", "ctrl": "LO-A-19", "remark": "", "done": ""}, {"no": 20, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Long air grinder", "ctrl": "LO-A-20", "remark": "", "done": ""}, {"no": 21, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Short air grinder", "ctrl": "SH-A-21", "remark": "", "done": ""}, {"no": 22, "date": "15-10-25", "pic": "Thông", "team": "Turning", "item": "Short air grinder", "ctrl": "SH-A-22", "remark": "", "done": ""}, {"no": 23, "date": "16-10-25", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-23", "remark": "", "done": ""}, {"no": 24, "date": "16-10-25", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-24", "remark": "", "done": ""}, {"no": 25, "date": "16-10-25", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-25", "remark": "", "done": ""}, {"no": 26, "date": "29-10-25", "pic": "Hưng", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-26", "remark": "", "done": ""}, {"no": 27, "date": "29-10-25", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-27", "remark": "", "done": ""}, {"no": 28, "date": "29-10-25", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-28", "remark": "", "done": ""}, {"no": 29, "date": "29-10-25", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-29", "remark": "", "done": ""}, {"no": 30, "date": "2025-11-01", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-30", "remark": "", "done": ""}, {"no": 31, "date": "2025-11-01", "pic": "Tuấn", "team": "Assembly", "item": "Grinding surface machine", "ctrl": "GR-S-31", "remark": "", "done": ""}, {"no": 32, "date": "2025-11-17", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-32", "remark": "", "done": ""}, {"no": 33, "date": "2025-11-17", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-33", "remark": "", "done": ""}, {"no": 34, "date": "2025-12-05", "pic": "Bình", "team": "IH+GC", "item": "Short air grinder", "ctrl": "SH-A-34", "remark": "", "done": ""}, {"no": 35, "date": "2025-12-05", "pic": "Bình", "team": "IH+GC", "item": "Short air grinder", "ctrl": "SH-A-35", "remark": "", "done": ""}, {"no": 36, "date": "2025-12-05", "pic": "Bình", "team": "IH+GC", "item": "Short air grinder", "ctrl": "SH-A-36", "remark": "", "done": ""}, {"no": 37, "date": "2025-12-12", "pic": "Bình", "team": "IH+GC", "item": "Air micro grinder", "ctrl": "AI-M-37", "remark": "", "done": ""}, {"no": 38, "date": "2025-12-12", "pic": "Bình", "team": "IH+GC", "item": "Short air grinder", "ctrl": "SH-A-38", "remark": "", "done": ""}, {"no": 39, "date": "2026-01-14", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-39", "remark": "", "done": ""}, {"no": 40, "date": "2026-01-14", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-40", "remark": "", "done": ""}, {"no": 41, "date": "2026-01-14", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-41", "remark": "", "done": ""}, {"no": 42, "date": "2026-01-14", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-42", "remark": "", "done": ""}, {"no": 43, "date": "2026-01-14", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-43", "remark": "", "done": ""}, {"no": 44, "date": "2026-01-14", "pic": "HƯng", "team": "Drilling", "item": "Short air grinder", "ctrl": "SH-A-44", "remark": "", "done": ""}, {"no": 45, "date": "2026-01-29", "pic": "Tùng", "team": "Coating", "item": "Pneumatic Sander Air", "ctrl": "PS-A-45", "remark": "", "done": ""}, {"no": 46, "date": "2026-01-29", "pic": "Tùng", "team": "Coating", "item": "Pneumatic Sander Air", "ctrl": "PS-A-46", "remark": "", "done": ""}, {"no": 47, "date": "2026-02-05", "pic": "Tuấn", "team": "Assembly", "item": "Grinding surface machine", "ctrl": "GR-S-47", "remark": "", "done": ""}, {"no": 48, "date": "2026-02-06", "pic": "Tùng", "team": "Coating", "item": "Pneumatic Sander Air", "ctrl": "PS-A-48", "remark": "", "done": ""}, {"no": 49, "date": "2026-02-06", "pic": "Tùng", "team": "Coating", "item": "Pneumatic Sander Air", "ctrl": "PS-A-49", "remark": "", "done": ""}, {"no": 50, "date": "2026-02-06", "pic": "Tùng", "team": "Coating", "item": "Pneumatic Sander Air", "ctrl": "PS-A-50", "remark": "", "done": ""}, {"no": 51, "date": "2026-02-06", "pic": "Tùng", "team": "Coating", "item": "Cordless drill", "ctrl": "CO-D-51", "remark": "", "done": ""}, {"no": 52, "date": "2026-02-24", "pic": "Hưng", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-52", "remark": "Purchased", "done": ""}, {"no": 53, "date": "2026-02-24", "pic": "Hưng", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-53", "remark": "Purchased", "done": ""}, {"no": 54, "date": "2026-03-10", "pic": "Thịnh", "team": "Turning", "item": "Air micro grinder", "ctrl": "AI-M-54", "remark": "Purchased", "done": ""}, {"no": 55, "date": "2026-03-10", "pic": "Thịnh", "team": "Turning", "item": "Air micro grinder", "ctrl": "AI-M-55", "remark": "Purchased", "done": ""}, {"no": 56, "date": "17-11-25", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-56", "remark": "", "done": ""}, {"no": 57, "date": "17-11-25", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-57", "remark": "", "done": ""}, {"no": 58, "date": "17-11-25", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-58", "remark": "", "done": ""}, {"no": 59, "date": "2026-03-12", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-59", "remark": "Purchased", "done": ""}, {"no": 60, "date": "2026-03-12", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-60", "remark": "Purchased", "done": ""}, {"no": 61, "date": "2026-03-12", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-61", "remark": "Purchased", "done": ""}, {"no": 62, "date": "2026-02-05", "pic": "Tuấn", "team": "Assembly", "item": "Grinding surface machine", "ctrl": "GR-S-62", "remark": "", "done": ""}, {"no": 63, "date": "2026-03-16", "pic": "Thông", "team": "Turning", "item": "Grinding surface machine", "ctrl": "GR-S-63", "remark": "Purchased", "done": ""}, {"no": 64, "date": "2026-03-16", "pic": "Bình", "team": "IH+GC", "item": "Grinding surface machine", "ctrl": "GR-S-64", "remark": "", "done": ""}, {"no": 65, "date": "2026-03-16", "pic": "Bình", "team": "IH+GC", "item": "Grinding surface machine", "ctrl": "GR-S-65", "remark": "", "done": ""}, {"no": 66, "date": "2026-03-16", "pic": "Bình", "team": "IH+GC", "item": "Grinding surface machine", "ctrl": "GR-S-66", "remark": "", "done": ""}, {"no": 67, "date": "2026-03-16", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-67", "remark": "", "done": ""}, {"no": 68, "date": "2026-03-16", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-68", "remark": "", "done": ""}, {"no": 69, "date": "2026-03-16", "pic": "Tuấn", "team": "Assembly", "item": "Cordless drill", "ctrl": "CO-D-69", "remark": "", "done": ""}, {"no": 70, "date": "2026-03-16", "pic": "Bình", "team": "IH+GC", "item": "Long air grinder", "ctrl": "LO-A-70", "remark": "", "done": ""}, {"no": 71, "date": "2026-03-16", "pic": "Bình", "team": "IH+GC", "item": "Grinding surface machine", "ctrl": "GR-S-71", "remark": "", "done": ""}, {"no": 72, "date": "2026-03-16", "pic": "Tùng", "team": "Coating", "item": "Grinding surface machine", "ctrl": "GR-S-72", "remark": "", "done": ""}, {"no": 73, "date": "2026-03-16", "pic": "Tùng", "team": "Coating", "item": "Grinding surface machine", "ctrl": "GR-S-73", "remark": "", "done": ""}, {"no": 74, "date": "2026-03-12", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-74", "remark": "", "done": ""}, {"no": 75, "date": "2026-03-25", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-75", "remark": "", "done": ""}, {"no": 76, "date": "2026-03-25", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-76", "remark": "", "done": ""}, {"no": 77, "date": "2026-04-09", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-77", "remark": "", "done": ""}, {"no": 78, "date": "2026-04-09", "pic": "Thông", "team": "Turning", "item": "Beveling machines", "ctrl": "BE-M-78", "remark": "", "done": ""}, {"no": 79, "date": "2026-04-11", "pic": "Thông", "team": "Turning", "item": "Short air grinder", "ctrl": "SH-A-79", "remark": "", "done": ""}, {"no": 80, "date": "2026-04-11", "pic": "Thông", "team": "Turning", "item": "Short air grinder", "ctrl": "SH-A-80", "remark": "", "done": ""}, {"no": 81, "date": "2026-04-11", "pic": "Nam", "team": "IH+GC", "item": "Grinding surface machine", "ctrl": "GR-S-81", "remark": "", "done": ""}, {"no": 82, "date": "2026-04-16", "pic": "Huy", "team": "IH+GC", "item": "Air Impact Wrench", "ctrl": "AI-I-82", "remark": "", "done": ""}, {"no": 83, "date": "2026-04-16", "pic": "Huy", "team": "IH+GC", "item": "Air Impact Wrench", "ctrl": "AI-I-83", "remark": "", "done": ""}, {"no": 84, "date": "2026-04-16", "pic": "Huy", "team": "IH+GC", "item": "Air Impact Wrench", "ctrl": "AI-I-84", "remark": "", "done": ""}, {"no": 85, "date": "2026-04-16", "pic": "Hưng", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-85", "remark": "", "done": ""}, {"no": 86, "date": "2026-04-16", "pic": "Hưng", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-86", "remark": "", "done": ""}, {"no": 87, "date": "2026-04-18", "pic": "Bình", "team": "IH+GC", "item": "Air Impact Wrench", "ctrl": "AI-I-87", "remark": "", "done": ""}, {"no": 88, "date": "2026-04-18", "pic": "Bình", "team": "IH+GC", "item": "Air Impact Wrench", "ctrl": "AI-I-88", "remark": "", "done": ""}, {"no": 89, "date": "2026-04-18", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-89", "remark": "", "done": ""}, {"no": 90, "date": "2026-04-18", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-90", "remark": "", "done": ""}, {"no": 91, "date": "2026-04-22", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-91", "remark": "", "done": ""}, {"no": 92, "date": "2026-04-22", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-92", "remark": "", "done": ""}, {"no": 93, "date": "2026-03-22", "pic": "Bình", "team": "IH+GC", "item": "Long air grinder", "ctrl": "LO-A-93", "remark": "", "done": ""}, {"no": 94, "date": "2026-04-22", "pic": "Tuấn", "team": "Assembly", "item": "Long air grinder", "ctrl": "LO-A-94", "remark": "", "done": ""}, {"no": 95, "date": "2026-04-22", "pic": "Tuấn", "team": "Assembly", "item": "Grinding surface machine", "ctrl": "GR-S-95", "remark": "", "done": ""}, {"no": 96, "date": "2026-04-18", "pic": "Bình", "team": "IH+GC", "item": "Air Impact Wrench", "ctrl": "AI-I-96", "remark": "", "done": ""}, {"no": 97, "date": "2026-05-12", "pic": "Hưng", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-97", "remark": "", "done": ""}, {"no": 98, "date": "2026-05-12", "pic": "Hưng", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-98", "remark": "", "done": ""}, {"no": 99, "date": "2026-05-12", "pic": "Hưng", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-99", "remark": "", "done": ""}, {"no": 100, "date": "2026-05-21", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-100", "remark": "", "done": ""}, {"no": 101, "date": "2026-05-21", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-101", "remark": "", "done": ""}, {"no": 102, "date": "2026-05-21", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-102", "remark": "", "done": ""}, {"no": 103, "date": "2026-05-22", "pic": "Thông", "team": "Turning", "item": "Short air grinder", "ctrl": "SH-A-103", "remark": "", "done": ""}, {"no": 104, "date": "2026-06-19", "pic": "Tùng", "team": "Packing", "item": "Handheld drill", "ctrl": "HA-D-104", "remark": "", "done": ""}, {"no": 105, "date": "2026-06-19", "pic": "Tùng", "team": "Packing", "item": "Handheld drill", "ctrl": "HA-D-105", "remark": "", "done": ""}, {"no": 106, "date": "2026-06-23", "pic": "Tùng", "team": "Packing", "item": "Pneumatic nail gun", "ctrl": "PN-G-106", "remark": "", "done": ""}, {"no": 107, "date": "2026-07-23", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-107", "remark": "", "done": ""}, {"no": 108, "date": "2026-07-23", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-108", "remark": "", "done": ""}, {"no": 109, "date": "2026-07-23", "pic": "Tuấn", "team": "Assembly", "item": "Long air grinder", "ctrl": "LO-A-109", "remark": "", "done": ""}, {"no": 110, "date": "2026-07-25", "pic": "Hưng", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-110", "remark": "", "done": ""}, {"no": 111, "date": "2026-07-25", "pic": "Hưng", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-111", "remark": "", "done": ""}, {"no": 112, "date": "2026-07-25", "pic": "Hưng", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-112", "remark": "", "done": ""}, {"no": 113, "date": "2026-08-10", "pic": "Nam", "team": "IH+GC", "item": "Air Impact Wrench", "ctrl": "AI-I-113", "remark": "", "done": ""}, {"no": 114, "date": "2026-08-10", "pic": "Nam", "team": "IH+GC", "item": "Air Impact Wrench", "ctrl": "AI-I-114", "remark": "", "done": ""}, {"no": 115, "date": "2026-08-10", "pic": "Nam", "team": "IH+GC", "item": "Beveling machines", "ctrl": "BE-M-115", "remark": "", "done": ""}, {"no": 116, "date": "2026-08-10", "pic": "Nam", "team": "IH+GC", "item": "Beveling machines", "ctrl": "BE-M-116", "remark": "", "done": ""}, {"no": 117, "date": "2026-08-10", "pic": "Tú", "team": "Machining", "item": "Beveling machines", "ctrl": "BE-M-117", "remark": "", "done": ""}, {"no": 118, "date": "2026-08-10", "pic": "Tú", "team": "Machining", "item": "Beveling machines", "ctrl": "BE-M-118", "remark": "", "done": ""}, {"no": 119, "date": "2026-08-10", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-119", "remark": "", "done": ""}, {"no": 120, "date": "2026-08-10", "pic": "Tuấn", "team": "Assembly", "item": "Short air grinder", "ctrl": "SH-A-120", "remark": "", "done": ""}, {"no": 121, "date": "2026-08-31", "pic": "Hưng", "team": "Drilling", "item": "Long air grinder", "ctrl": "LO-A-121", "remark": "202609-V310-0219", "done": "2026-09-24"}, {"no": 122, "date": "2026-08-31", "pic": "Hưng", "team": "Drilling", "item": "Short air grinder", "ctrl": "SH-A-122", "remark": "202609-V310-0219", "done": "2026-09-24"}, {"no": 123, "date": "2026-08-31", "pic": "Thông", "team": "Softzone", "item": "Pneumatic Sander Air", "ctrl": "PS-A-123", "remark": "202609-V310-0051", "done": "Cần chuyển sang máy"}, {"no": 124, "date": "2026-08-31", "pic": "Thông", "team": "IH", "item": "Short air grinder", "ctrl": "SH-A-124", "remark": "202609-V310-0051", "done": "Purchased"}, {"no": 125, "date": "2026-08-31", "pic": "Thông", "team": "IH", "item": "Grinding surface machine", "ctrl": "GR-S-125", "remark": "202609-V310-0051", "done": "10-10-26 (Đạt)"}, {"no": 126, "date": "2026-08-31", "pic": "Tùng", "team": "Coating", "item": "Pneumatic Sander Air", "ctrl": "PS-A-126", "remark": "202609-V310-0046", "done": "2026-09-29"}, {"no": 127, "date": "2026-08-31", "pic": "Tùng", "team": "Coating", "item": "Grinding surface machine", "ctrl": "GR-S-127", "remark": "202609-V310-0046", "done": "2026-09-22"}, {"no": 128, "date": "2026-09-04", "pic": "Đạt", "team": "Softzone", "item": "Beveling machines", "ctrl": "BE-M-128", "remark": "MRR", "done": "2026-09-01"}, {"no": 129, "date": "2026-09-18", "pic": "V.Thông", "team": "GC", "item": "Beveling machines", "ctrl": "BE-M-129", "remark": "202609-V310-0185", "done": "2026-09-12"}, {"no": 130, "date": "2026-09-18", "pic": "V.Thông", "team": "GC", "item": "Beveling machines", "ctrl": "BE-M-130", "remark": "202609-V310-0185", "done": "2026-10-24"}, {"no": 131, "date": "2026-09-18", "pic": "V.Thông", "team": "GC", "item": "Beveling machines", "ctrl": "BE-M-131", "remark": "202609-V310-0185", "done": "2026-10-24"}, {"no": 132, "date": "2026-09-18", "pic": "V.Thông", "team": "GC", "item": "Beveling machines", "ctrl": "BE-M-132", "remark": "202609-V310-0185", "done": "2026-10-24"}, {"no": 133, "date": "2026-09-22", "pic": "Hưng", "team": "Drilling", "item": "Beveling machines", "ctrl": "BE-M-133", "remark": "202609-V310-0219", "done": "2026-09-30"}, {"no": 134, "date": "2026-09-24", "pic": "Hưng", "team": "Drilling", "item": "Short air grinder", "ctrl": "SH-A-134", "remark": "202609-V310-0219", "done": "2026-11-03"}, {"no": 135, "date": "2026-09-28", "pic": "Tùng", "team": "Coating", "item": "Pneumatic Sander Air", "ctrl": "PS-A-135", "remark": "202609-V310-0227", "done": "2026-09-30"}, {"no": 136, "date": "2026-09-28", "pic": "Tùng", "team": "Coating", "item": "Pneumatic Sander Air", "ctrl": "PS-A-136", "remark": "202609-V310-0227", "done": "2026-10-14"}, {"no": 137, "date": "2026-09-30", "pic": "V.Thông", "team": "Drilling", "item": "Beveling machines", "ctrl": "BE-M-137", "remark": "202610-V310-0069", "done": "2026-10-24"}, {"no": 138, "date": "2026-10-01", "pic": "V.Thông", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-138", "remark": "202610-V310-0069", "done": "2026-10-24"}, {"no": 139, "date": "2026-10-01", "pic": "V.Thông", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-139", "remark": "202610-V310-0069", "done": "2026-10-24"}, {"no": 140, "date": "2026-10-02", "pic": "Tùng", "team": "Packing", "item": "Portable Direct Heat Sealer", "ctrl": "PDH-S-140", "remark": "Đã làm hôm 10/10", "done": "2026-10-02"}, {"no": 141, "date": "2026-10-03", "pic": "V.Thông", "team": "Drilling", "item": "Air Impact Wrench", "ctrl": "AI-I-141", "remark": "202610-V310-0069", "done": ""}, {"no": 142, "date": "2026-10-04", "pic": "Hưng", "team": "Drilling", "item": "Cordless drill", "ctrl": "CO-D-142", "remark": "Wait loss damage", "done": "2026-10-06"}, {"no": 143, "date": "2026-10-10", "pic": "Tùng", "team": "Coating", "item": "Pneumatic Sander Air", "ctrl": "PS-A-143", "remark": "Đã làm hôm 10/10", "done": "2026-10-24"}, {"no": 144, "date": "2026-10-11", "pic": "Tùng", "team": "Coating", "item": "Pneumatic Sander Air", "ctrl": "PS-A-144", "remark": "Đã làm hôm 10/10", "done": "2026-11-04"}, {"no": 145, "date": "2026-10-12", "pic": "Tùng", "team": "Coating", "item": "Pneumatic Sander Air", "ctrl": "PS-A-145", "remark": "Đã làm hôm 10/10", "done": "2026-11-04"}, {"no": 146, "date": "2026-10-22", "pic": "Đạt", "team": "Softzone", "item": "Short air grinder", "ctrl": "SH-A-146", "remark": "202610-V310-0223", "done": "2026-10-26"}, {"no": 147, "date": "2026-10-22", "pic": "Đạt", "team": "Softzone", "item": "Short air grinder", "ctrl": "SH-A-147", "remark": "202610-V310-0223", "done": "2026-10-26"}, {"no": 148, "date": "2026-10-24", "pic": "V.Thông", "team": "GC", "item": "Beveling machines", "ctrl": "BE-M-148", "remark": "Wait loss damage", "done": ""}, {"no": 149, "date": "2026-10-27", "pic": "Thịnh", "team": "Turning", "item": "Cordless drill", "ctrl": "CO-D-149", "remark": "202610-V310-0246", "done": "2026-11-21"}, {"no": 150, "date": "2026-11-13", "pic": "Đạt", "team": "Softzone", "item": "Cordless drill", "ctrl": "CO-D-150", "remark": "202611-V310-0121", "done": "2026-11-21"}, {"no": 151, "date": "2026-11-16", "pic": "Thông", "team": "Softzone", "item": "Grinding surface machine", "ctrl": "GR-S-151", "remark": "202611-V310-0157", "done": "2026-11-21"}, {"no": 152, "date": "2026-11-20", "pic": "Tùng", "team": "Coating", "item": "Grinding surface machine", "ctrl": "GR-S-152", "remark": "202611-V310-0199", "done": "2026-11-23"}, {"no": 153, "date": "2026-11-20", "pic": "Tùng", "team": "Coating", "item": "Grinding surface machine", "ctrl": "GR-S-153", "remark": "202611-V310-0199", "done": "2026-11-23"}, {"no": 154, "date": "2026-11-20", "pic": "Tùng", "team": "Coating", "item": "Long air grinder", "ctrl": "LO-A-154", "remark": "202611-V310-0199", "done": "2026-11-23"}],
+  purchases: [{"id": "PR-001", "reqDate": "31/8/2026", "approvalDate": "2026-09-02", "receivedDate": "", "team": "Turning Team", "equipment": "Máy vát mép cầm tay mini", "reason": "Trial purchase of the CKV pneumatic tool to replace the Keyang UB-03A. The pneumatic system will prevent the overheating problems caused by continuous electrical operation.", "qty": 1, "unitPrice": 0, "repairCost": 0, "purchaseCost": 0.0, "remark": "Thịnh"}],
+  users: [
+    { username: 'admin', password: '123456', name: 'Quản trị viên (Danh)', role: 'Admin' },
+    { username: 'user', password: '123456', name: 'Tổ trưởng Xưởng', role: 'User' }
+  ],
+  config: {
+    geminiKey: '',
+    lastUpdatedBy: 'Khởi tạo từ Excel gốc'
+  }
+};
+
+let sbClient = null;
+let sbCreds = null;
+let isCloudActive = false;
+let realtimeChannel = null;
+let pollTimer = null;
+let lastServerUpdatedAt = "";
+let barChartInst = null;
+let doughnutChartInst = null;
+
+let state = {
+  user: null,
+  authMode: 'login',
+  activeTab: 'dashboard',
+  master: [],
+  requirements: [],
+  damaged: [],
+  purchases: [],
+  users: [],
+  config: { geminiKey: '', lastUpdatedBy: '' },
+  aiHistory: []
+};
+
+// ==================== BOOTSTRAP ====================
+window.addEventListener('DOMContentLoaded', async () => {
+  populateDropdowns();
+  await initStorageEngine();
+
+  const savedUser = localStorage.getItem('pod_sb_auth_user');
+  if (savedUser) {
+    try {
+      const parsed = JSON.parse(savedUser);
+      const matched = state.users.find(u => u.username.toLowerCase() === (parsed.username || '').toLowerCase());
+      if (matched) {
+        state.user = { username: matched.username, name: matched.name, role: matched.role };
+        enterApp();
+        return;
+      }
+    } catch (e) {}
+  }
+});
+
+function getActiveSupabaseCreds() {
+  if (DEFAULT_SUPABASE_URL && DEFAULT_SUPABASE_ANON_KEY) {
+    return { url: DEFAULT_SUPABASE_URL.replace(/\/+$/, ''), key: DEFAULT_SUPABASE_ANON_KEY.trim() };
+  }
+  try {
+    const raw = localStorage.getItem('pod_custom_sb_creds');
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (p && p.url && p.key) return { url: p.url.replace(/\/+$/, ''), key: p.key.trim() };
+    }
+  } catch (e) {}
+  return null;
+}
+
+// ==================== SUPABASE REST + REALTIME ENGINE ====================
+function sbBuildHeaders(extra) {
+  const h = Object.assign({ 'apikey': sbCreds.key }, extra || {});
+  // Legacy anon keys (JWT starting with eyJ) require Authorization Bearer;
+  // New sb_publishable_* keys must ONLY be sent via the apikey header.
+  if (sbCreds.key && sbCreds.key.startsWith('eyJ')) {
+    h['Authorization'] = `Bearer ${sbCreds.key}`;
+  }
+  return h;
+}
+
+async function sbFetchAll() {
+  const res = await fetch(`${sbCreds.url}/rest/v1/${TABLE_NAME}?select=id,data,updated_at`, {
+    headers: sbBuildHeaders({ 'Accept': 'application/json' })
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`HTTP ${res.status}: ${txt.slice(0, 140)}`);
+  }
+  const rows = await res.json();
+  const cfgRow = (rows || []).find(r => r.id === 'config');
+  if (cfgRow && cfgRow.updated_at) lastServerUpdatedAt = cfgRow.updated_at;
+  return rows;
+}
+
+// Siêu nhẹ (~100 byte): chỉ kiểm tra mốc thời gian cập nhật, tiết kiệm >99% băng thông Supabase
+async function sbCheckHasChanges() {
+  const res = await fetch(`${sbCreds.url}/rest/v1/${TABLE_NAME}?id=eq.config&select=updated_at`, {
+    headers: sbBuildHeaders({ 'Accept': 'application/json' })
+  });
+  if (!res.ok) return false;
+  const arr = await res.json();
+  const srvTime = (arr && arr[0] && arr[0].updated_at) || '';
+  return Boolean(srvTime && srvTime !== lastServerUpdatedAt);
+}
+
+async function sbUpsertRows(rows) {
+  const res = await fetch(`${sbCreds.url}/rest/v1/${TABLE_NAME}?on_conflict=id`, {
+    method: 'POST',
+    headers: sbBuildHeaders({
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates,return=minimal'
+    }),
+    body: JSON.stringify(rows)
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`HTTP ${res.status}: ${txt.slice(0, 140)}`);
+  }
+}
+
+async function initStorageEngine() {
+  const badge = document.getElementById('authEnvBadge');
+  sbCreds = getActiveSupabaseCreds();
+
+  if (sbCreds) {
+    try {
+      badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> Đang kết nối Supabase Cloud...';
+      const rows = await sbFetchAll();
+      await hydrateOrSeedFromRows(rows);
+
+      isCloudActive = true;
+      const hostShort = sbCreds.url.replace(/^https?:\/\//, '').split('.')[0];
+      badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span> Online: Supabase (' + escapeHtml(hostShort) + ')';
+      document.getElementById('offlineCloudHint').classList.add('hidden');
+      setSyncBadge('ok', 'Supabase Online • ' + hostShort);
+
+      setupRealtimeAndPolling();
+      return;
+    } catch (err) {
+      console.error('Supabase init error:', err);
+      badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-400"></span> Lỗi kết nối Supabase — dùng Offline tạm';
+      toast('⚠️ Không kết nối được Supabase: ' + (err.message || err));
+    }
+  }
+
+  // Fallback: Offline LocalStorage
+  isCloudActive = false;
+  loadOfflineData();
+  badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400"></span> Chế độ Offline (Chưa gắn Supabase)';
+  document.getElementById('offlineCloudHint').classList.remove('hidden');
+  setSyncBadge('ok', 'Offline (LocalStorage)');
+}
+
+async function hydrateOrSeedFromRows(rows) {
+  const map = {};
+  (rows || []).forEach(r => { map[r.id] = r.data; });
+
+  const missing = [];
+  const keys = ['master', 'requirements', 'damaged', 'purchases', 'users', 'config'];
+  keys.forEach(k => {
+    if (!map[k]) {
+      const payload = (k === 'config') ? SEED_DATA.config : { items: SEED_DATA[k] };
+      missing.push({ id: k, data: payload, updated_at: new Date().toISOString() });
+      map[k] = payload;
+    }
+  });
+
+  if (missing.length > 0) {
+    await sbUpsertRows(missing);
+  }
+
+  state.master = (map.master && map.master.items) || [];
+  state.requirements = (map.requirements && map.requirements.items) || [];
+  state.damaged = (map.damaged && map.damaged.items) || [];
+  state.purchases = (map.purchases && map.purchases.items) || [];
+  state.users = (map.users && map.users.items) || JSON.parse(JSON.stringify(SEED_DATA.users));
+  state.config = Object.assign({ geminiKey: '', lastUpdatedBy: '' }, map.config || {});
+  ensureConfigLists();
+  populateDropdowns();
+}
+
+function setupRealtimeAndPolling() {
+  // 1. Try Supabase Realtime WebSocket
+  if (typeof window.supabase !== 'undefined' && window.supabase.createClient) {
+    try {
+      sbClient = window.supabase.createClient(sbCreds.url, sbCreds.key);
+      realtimeChannel = sbClient
+        .channel('pod_store_changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: TABLE_NAME }, payload => {
+          const row = payload.new;
+          if (!row || !row.id || !row.data) return;
+          applySingleRowUpdate(row.id, row.data);
+        })
+        .subscribe(status => {
+          if (status === 'SUBSCRIBED') {
+            setSyncBadge('ok', 'Supabase Real-time Live');
+          }
+        });
+    } catch (e) {
+      console.warn('Realtime fallback to polling:', e);
+    }
+  }
+
+  // 2. Background ultra-lightweight polling every 30s (chỉ tải ~100 byte kiểm tra thay đổi)
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    if (!isCloudActive || document.hidden) return;
+    try {
+      const changed = await sbCheckHasChanges();
+      if (changed) {
+        const rows = await sbFetchAll();
+        await hydrateOrSeedFromRows(rows);
+        if (state.user) {
+          updateAiKeyIndicator();
+          renderAll();
+        }
+      }
+    } catch (e) {}
+  }, 30000);
+}
+
+function applySingleRowUpdate(id, data) {
+  if (id === 'config') {
+    state.config = Object.assign({ geminiKey: '', lastUpdatedBy: '' }, data);
+    ensureConfigLists();
+    populateDropdowns();
+  } else if (['master', 'requirements', 'damaged', 'purchases', 'users'].includes(id)) {
+    state[id] = data.items || [];
+  }
+  if (state.user) {
+    updateAiKeyIndicator();
+    renderAll();
+    if (!document.getElementById('usersModal').classList.contains('hidden')) {
+      renderUsersTable();
+    }
+  }
+}
+
+async function manualRefresh() {
+  if (!isCloudActive) {
+    toast('Đang ở chế độ Offline. Bấm ⚡ Supabase để kết nối đồng bộ online.');
+    return;
+  }
+  setSyncBadge('busy', 'Đang tải từ Supabase...');
+  try {
+    const rows = await sbFetchAll();
+    await hydrateOrSeedFromRows(rows);
+    updateAiKeyIndicator();
+    renderAll();
+    setSyncBadge('ok', 'Đã đồng bộ Supabase');
+    toast('🔄 Đã cập nhật dữ liệu mới nhất!');
+  } catch (err) {
+    setSyncBadge('err', 'Lỗi đồng bộ');
+    toast('❌ Không tải được dữ liệu: ' + (err.message || err));
+  }
+}
+
+function loadOfflineData() {
+  const saved = localStorage.getItem('pod_sb_offline_data');
+  const data = saved ? JSON.parse(saved) : JSON.parse(JSON.stringify(SEED_DATA));
+  state.master = data.master || JSON.parse(JSON.stringify(SEED_DATA.master));
+  state.requirements = data.requirements || JSON.parse(JSON.stringify(SEED_DATA.requirements));
+  state.damaged = data.damaged || JSON.parse(JSON.stringify(SEED_DATA.damaged));
+  state.purchases = data.purchases || JSON.parse(JSON.stringify(SEED_DATA.purchases));
+  state.users = data.users || JSON.parse(JSON.stringify(SEED_DATA.users));
+  state.config = data.config || Object.assign({}, SEED_DATA.config);
+  ensureConfigLists();
+  populateDropdowns();
+}
+
+async function persistSections(sections) {
+  const nowStr = new Date().toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+  const actor = state.user ? (state.user.name || state.user.username) : 'System';
+  state.config.lastUpdatedBy = `${actor} (${nowStr})`;
+
+  if (isCloudActive && sbCreds) {
+    setSyncBadge('busy', 'Đang lưu Supabase...');
+    try {
+      const list = Array.isArray(sections) ? [...sections] : ['master', 'requirements', 'damaged', 'purchases'];
+      if (!list.includes('config')) list.push('config');
+      const nowIso = new Date().toISOString();
+      const rows = list.map(sec => ({
+        id: sec,
+        data: sec === 'config' ? state.config : { items: state[sec] },
+        updated_at: nowIso
+      }));
+      await sbUpsertRows(rows);
+      lastServerUpdatedAt = nowIso;
+      setSyncBadge('ok', 'Đã lưu Cloud • ' + nowStr.split(' ')[0]);
+    } catch (err) {
+      setSyncBadge('err', 'Lỗi lưu Supabase');
+      toast('❌ Lỗi lưu dữ liệu: ' + (err.message || err));
+    }
+  } else {
+    localStorage.setItem('pod_sb_offline_data', JSON.stringify({
+      master: state.master,
+      requirements: state.requirements,
+      damaged: state.damaged,
+      purchases: state.purchases,
+      users: state.users,
+      config: state.config
+    }));
+    setSyncBadge('ok', 'Đã lưu Offline');
+  }
+}
+
+function setSyncBadge(status, text) {
+  const dot = document.getElementById('syncStatusDot');
+  const lbl = document.getElementById('syncStatusText');
+  lbl.textContent = text;
+  dot.className = 'w-2 h-2 rounded-full ' + (
+    status === 'ok' ? 'bg-emerald-400' :
+    status === 'busy' ? 'bg-amber-400 animate-pulse' : 'bg-red-400'
+  );
+}
+
+// ==================== SUPABASE CONFIG MODAL ====================
+function openCloudConfigModal() {
+  const cur = getActiveSupabaseCreds();
+  document.getElementById('sbUrlInput').value = cur ? cur.url : '';
+  document.getElementById('sbKeyInput').value = cur ? cur.key : '';
+  document.getElementById('cloudConfigModal').classList.remove('hidden');
+}
+
+function saveCloudConfigFromModal() {
+  const url = document.getElementById('sbUrlInput').value.trim().replace(/\/+$/, '');
+  const key = document.getElementById('sbKeyInput').value.trim();
+  if (!url.startsWith('https://') || !key) {
+    alert('Vui lòng nhập đúng Project URL (bắt đầu bằng https://) và Anon/Publishable Key!');
+    return;
+  }
+  localStorage.setItem('pod_custom_sb_creds', JSON.stringify({ url, key }));
+  closeModal('cloudConfigModal');
+  toast('✅ Đã lưu cấu hình Supabase! Đang kết nối...');
+  setTimeout(() => location.reload(), 600);
+}
+
+function clearLocalCloudConfig() {
+  localStorage.removeItem('pod_custom_sb_creds');
+  closeModal('cloudConfigModal');
+  toast('Đã xóa cấu hình Supabase cục bộ. Đang tải lại...');
+  setTimeout(() => location.reload(), 600);
+}
+
+// ==================== AUTH & USER MANAGEMENT ====================
+function populateDropdowns() {
+  const teams = getTeams();
+  const types = getEquipTypes();
+
+  const preserveSelect = (elId, htmlStr) => {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const prev = el.value;
+    el.innerHTML = htmlStr;
+    if (prev && Array.from(el.options).some(o => o.value === prev)) el.value = prev;
+  };
+
+  const teamOpts = teams.map(t => `<option value="${escapeAttr(t)}">${escapeHtml(t)}</option>`).join('');
+  const typeFilterOpts = types.map(e => `<option value="${escapeAttr(e.en)}">${escapeHtml(e.en)} (${escapeHtml(e.vi)})</option>`).join('');
+  const typeSelectOpts = types.map(e => `<option value="${escapeAttr(e.en)}">${escapeHtml(e.en)} — ${escapeHtml(e.vi)} (${escapeHtml(e.prefix)})</option>`).join('');
+
+  preserveSelect('filterTeam', '<option value="">Tất cả Khu vực</option>' + teamOpts);
+  preserveSelect('filterReqTeam', '<option value="">Tất cả Khu vực</option>' + teamOpts);
+  preserveSelect('filterDmgTeam', '<option value="">Tất cả Khu vực</option>' + teamOpts);
+  preserveSelect('filterType', '<option value="">Tất cả Loại máy</option>' + typeFilterOpts);
+  preserveSelect('itemTypeSelect', typeSelectOpts);
+  preserveSelect('reqNewType', typeSelectOpts);
+  ['itemTeamSelect', 'pTeam', 'reqNewTeam'].forEach(id => preserveSelect(id, teamOpts));
+
+  // Datalists for flexible Damaged Log inputs
+  const dlTeams = document.getElementById('teamNameDatalist');
+  if (dlTeams) dlTeams.innerHTML = teams.map(t => `<option value="${escapeAttr(t)}">`).join('');
+  const dlEquip = document.getElementById('equipNameDatalist');
+  if (dlEquip) dlEquip.innerHTML = types.map(e => `<option value="${escapeAttr(e.en)}">${escapeHtml(e.vi)}</option>`).join('');
+  const dlCtrl = document.getElementById('masterCtrlDatalist');
+  if (dlCtrl) dlCtrl.innerHTML = state.master.map(m => `<option value="${escapeAttr(m.id)}">${escapeHtml(m.en)} (${escapeHtml(m.team)} • ${escapeHtml(m.status)})</option>`).join('');
+}
+
+// ==================== CATEGORY MANAGER & QUICK ADD ====================
+function toggleQuickAddType(force) {
+  const box = document.getElementById('quickAddTypeBox');
+  const show = typeof force === 'boolean' ? force : box.classList.contains('hidden');
+  box.classList.toggle('hidden', !show);
+  if (show) {
+    document.getElementById('qTypeEn').value = '';
+    document.getElementById('qTypeVi').value = '';
+    document.getElementById('qTypePrefix').value = '';
+    document.getElementById('qTypeEn').focus();
+  }
+}
+
+async function saveQuickEquipType() {
+  const en = document.getElementById('qTypeEn').value.trim();
+  const vi = document.getElementById('qTypeVi').value.trim();
+  let prefix = document.getElementById('qTypePrefix').value.trim().toUpperCase();
+  if (!en || !vi || !prefix) {
+    alert('Vui lòng nhập đủ Tên tiếng Anh, Tên tiếng Việt và Mã nhóm (vd: TO-W-)');
+    return;
+  }
+  if (!prefix.endsWith('-')) prefix += '-';
+  ensureConfigLists();
+  if (state.config.equipTypes.some(x => x.en.toLowerCase() === en.toLowerCase() || x.prefix.toLowerCase() === prefix.toLowerCase())) {
+    alert('Loại thiết bị hoặc Mã nhóm này đã tồn tại!');
+    return;
+  }
+  state.config.equipTypes.push({ prefix, en, vi });
+  populateDropdowns();
+  document.getElementById('itemTypeSelect').value = en;
+  suggestNextControlNumber();
+  toggleQuickAddType(false);
+  await persistSections(['config']);
+  toast(`✅ Đã thêm loại thiết bị mới: ${en} (${prefix})`);
+}
+
+function toggleQuickAddTeam(force) {
+  const box = document.getElementById('quickAddTeamBox');
+  const show = typeof force === 'boolean' ? force : box.classList.contains('hidden');
+  box.classList.toggle('hidden', !show);
+  if (show) {
+    document.getElementById('qTeamName').value = '';
+    document.getElementById('qTeamName').focus();
+  }
+}
+
+async function saveQuickTeam() {
+  const name = document.getElementById('qTeamName').value.trim();
+  if (!name) return;
+  ensureConfigLists();
+  if (state.config.teams.some(t => t.toLowerCase() === name.toLowerCase())) {
+    alert('Khu vực này đã tồn tại!');
+    return;
+  }
+  state.config.teams.push(name);
+  populateDropdowns();
+  document.getElementById('itemTeamSelect').value = name;
+  toggleQuickAddTeam(false);
+  renderDashboard();
+  await persistSections(['config']);
+  toast(`✅ Đã thêm khu vực mới: ${name}`);
+}
+
+function openCategoryModal() {
+  ensureConfigLists();
+  renderCategoryModal();
+  document.getElementById('categoryModal').classList.remove('hidden');
+}
+
+function renderCategoryModal() {
+  const types = getEquipTypes();
+  const teams = getTeams();
+  document.getElementById('catTypeCount').textContent = types.length;
+  document.getElementById('catTeamCount').textContent = teams.length;
+
+  document.getElementById('catTypesBody').innerHTML = types.map((t, idx) => `
+    <tr class="hover:bg-slate-50">
+      <td class="p-2 font-mono font-bold text-blue-800">${escapeHtml(t.prefix)}</td>
+      <td class="p-2 font-semibold">${escapeHtml(t.en)}</td>
+      <td class="p-2 text-slate-600">${escapeHtml(t.vi)}</td>
+      <td class="p-2 text-right">
+        <button onclick="deleteEquipType(${idx})" class="px-2 py-0.5 rounded bg-red-50 hover:bg-red-600 text-red-700 hover:text-white text-[11px]">Xóa</button>
+      </td>
+    </tr>
+  `).join('');
+
+  document.getElementById('catTeamsWrap').innerHTML = teams.map((t, idx) => `
+    <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-700">
+      ${escapeHtml(t)}
+      <button onclick="deleteTeam(${idx})" title="Xóa khu vực" class="text-slate-400 hover:text-red-600 font-bold">✕</button>
+    </span>
+  `).join('');
+}
+
+async function addEquipTypeFromManager(e) {
+  e.preventDefault();
+  const en = document.getElementById('mTypeEn').value.trim();
+  const vi = document.getElementById('mTypeVi').value.trim();
+  let prefix = document.getElementById('mTypePrefix').value.trim().toUpperCase();
+  if (!prefix.endsWith('-')) prefix += '-';
+  ensureConfigLists();
+  if (state.config.equipTypes.some(x => x.en.toLowerCase() === en.toLowerCase() || x.prefix.toLowerCase() === prefix.toLowerCase())) {
+    alert('Loại thiết bị hoặc Mã nhóm này đã tồn tại!');
+    return;
+  }
+  state.config.equipTypes.push({ prefix, en, vi });
+  document.getElementById('mTypeEn').value = '';
+  document.getElementById('mTypeVi').value = '';
+  document.getElementById('mTypePrefix').value = '';
+  populateDropdowns();
+  renderCategoryModal();
+  await persistSections(['config']);
+  toast(`✅ Đã thêm loại: ${en} (${prefix})`);
+}
+
+async function deleteEquipType(idx) {
+  ensureConfigLists();
+  const t = state.config.equipTypes[idx];
+  if (!t) return;
+  const inUse = state.master.filter(m => m.en === t.en).length;
+  if (inUse > 0 && !confirm(`Đang có ${inUse} thiết bị thuộc loại "${t.en}" trong Master List. Bạn vẫn muốn xóa khỏi danh mục gợi ý?`)) return;
+  state.config.equipTypes.splice(idx, 1);
+  populateDropdowns();
+  renderCategoryModal();
+  await persistSections(['config']);
+  toast(`🗑️ Đã xóa loại ${t.en}`);
+}
+
+async function addTeamFromManager(e) {
+  e.preventDefault();
+  const name = document.getElementById('mTeamName').value.trim();
+  ensureConfigLists();
+  if (state.config.teams.some(t => t.toLowerCase() === name.toLowerCase())) {
+    alert('Khu vực này đã tồn tại!');
+    return;
+  }
+  state.config.teams.push(name);
+  document.getElementById('mTeamName').value = '';
+  populateDropdowns();
+  renderCategoryModal();
+  renderDashboard();
+  await persistSections(['config']);
+  toast(`✅ Đã thêm khu vực: ${name}`);
+}
+
+async function deleteTeam(idx) {
+  ensureConfigLists();
+  const name = state.config.teams[idx];
+  const inUse = state.master.filter(m => m.team === name).length;
+  if (inUse > 0) {
+    alert(`Không thể xóa "${name}" vì đang có ${inUse} thiết bị thuộc khu vực này. Hãy chuyển máy sang khu vực khác trước.`);
+    return;
+  }
+  if (!confirm(`Xóa khu vực "${name}"?`)) return;
+  state.config.teams.splice(idx, 1);
+  populateDropdowns();
+  renderCategoryModal();
+  renderDashboard();
+  await persistSections(['config']);
+  toast(`🗑️ Đã xóa khu vực ${name}`);
+}
+
+function switchAuthMode(mode) {
+  state.authMode = mode;
+  document.getElementById('authError').classList.add('hidden');
+  const isReg = mode === 'register';
+  document.getElementById('regNameGroup').classList.toggle('hidden', !isReg);
+  document.getElementById('rememberRow').classList.toggle('hidden', isReg);
+  document.getElementById('btnTabLogin').className = !isReg
+    ? 'flex-1 py-2 text-sm font-semibold rounded-lg bg-white text-emerald-700 shadow-sm transition'
+    : 'flex-1 py-2 text-sm font-semibold rounded-lg text-slate-500 hover:text-slate-700 transition';
+  document.getElementById('btnTabReg').className = isReg
+    ? 'flex-1 py-2 text-sm font-semibold rounded-lg bg-white text-emerald-700 shadow-sm transition'
+    : 'flex-1 py-2 text-sm font-semibold rounded-lg text-slate-500 hover:text-slate-700 transition';
+  document.getElementById('authSubmitBtn').innerHTML = isReg ? '<span>Tạo tài khoản & Đăng nhập</span>' : '<span>Đăng nhập hệ thống</span>';
+}
+
+async function handleAuthSubmit(e) {
+  e.preventDefault();
+  const username = document.getElementById('authUsername').value.trim();
+  const password = document.getElementById('authPassword').value.trim();
+  const fullName = document.getElementById('authFullName').value.trim();
+  const remember = document.getElementById('authRemember').checked;
+  const errEl = document.getElementById('authError');
+  errEl.classList.add('hidden');
+
+  if (state.authMode === 'login') {
+    const found = state.users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.password === password);
+    if (!found) {
+      errEl.textContent = 'Sai tên đăng nhập hoặc mật khẩu. (Mặc định: admin / 123456)';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    state.user = { username: found.username, name: found.name, role: found.role };
+    if (remember) localStorage.setItem('pod_sb_auth_user', JSON.stringify(state.user));
+    enterApp();
+  } else {
+    if (username.length < 3 || password.length < 4) {
+      errEl.textContent = 'Tên đăng nhập tối thiểu 3 ký tự, mật khẩu tối thiểu 4 ký tự.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    if (state.users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
+      errEl.textContent = 'Tên đăng nhập này đã tồn tại.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    const newUser = { username, password, name: fullName || username, role: 'User' };
+    state.users.push(newUser);
+    state.user = { username: newUser.username, name: newUser.name, role: newUser.role };
+    localStorage.setItem('pod_sb_auth_user', JSON.stringify(state.user));
+    await persistSections(['users']);
+    enterApp();
+  }
+}
+
+function enterApp() {
+  document.getElementById('authScreen').classList.add('hidden');
+  document.getElementById('appShell').classList.remove('hidden');
+  document.getElementById('aiFabBtn').classList.remove('hidden');
+
+  const name = state.user.name || state.user.username;
+  document.getElementById('userDisplayName').textContent = name;
+  document.getElementById('userDisplayRole').textContent = state.user.role || 'User';
+  document.getElementById('userAvatar').textContent = name.charAt(0).toUpperCase();
+  document.getElementById('btnManageUsers').classList.toggle('hidden', state.user.role !== 'Admin');
+
+  initAiWelcome();
+  updateAiKeyIndicator();
+  renderAll();
+}
+
+function logout() {
+  localStorage.removeItem('pod_sb_auth_user');
+  state.user = null;
+  document.getElementById('appShell').classList.add('hidden');
+  document.getElementById('aiFabBtn').classList.add('hidden');
+  document.getElementById('aiChatPanel').classList.add('hidden');
+  document.getElementById('authScreen').classList.remove('hidden');
+}
+
+function openUsersModal() {
+  renderUsersTable();
+  document.getElementById('usersModal').classList.remove('hidden');
+}
+
+function renderUsersTable() {
+  document.getElementById('usersTableBody').innerHTML = state.users.map((u, idx) => `
+    <tr>
+      <td class="p-2.5 font-mono font-bold">${escapeHtml(u.username)}</td>
+      <td class="p-2.5">${escapeHtml(u.name)}</td>
+      <td class="p-2.5"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${u.role==='Admin'?'bg-emerald-100 text-emerald-800':'bg-slate-100 text-slate-700'}">${escapeHtml(u.role)}</span></td>
+      <td class="p-2.5 text-right">
+        ${u.username.toLowerCase() !== 'admin'
+          ? `<button onclick="deleteUserByAdmin(${idx})" class="px-2 py-1 rounded bg-red-50 hover:bg-red-600 text-red-700 hover:text-white text-[11px]">Xóa</button>`
+          : '<span class="text-[10px] text-slate-400">Chính</span>'}
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function addUserByAdmin(e) {
+  e.preventDefault();
+  const username = document.getElementById('newUName').value.trim();
+  const password = document.getElementById('newUPass').value.trim();
+  const name = document.getElementById('newUFull').value.trim();
+  const role = document.getElementById('newURole').value;
+  const idx = state.users.findIndex(u => u.username.toLowerCase() === username.toLowerCase());
+  if (idx >= 0) {
+    state.users[idx] = { username: state.users[idx].username, password, name, role: state.users[idx].username.toLowerCase() === 'admin' ? 'Admin' : role };
+    toast(`✅ Đã cập nhật thông tin/mật khẩu cho ${username}`);
+  } else {
+    state.users.push({ username, password, name, role });
+    toast(`✅ Đã tạo tài khoản ${username}`);
+  }
+  document.getElementById('newUName').value = '';
+  document.getElementById('newUPass').value = '';
+  document.getElementById('newUFull').value = '';
+  renderUsersTable();
+  await persistSections(['users']);
+}
+
+async function deleteUserByAdmin(idx) {
+  if (!confirm('Xóa tài khoản này?')) return;
+  state.users.splice(idx, 1);
+  renderUsersTable();
+  await persistSections(['users']);
+  toast('🗑️ Đã xóa tài khoản');
+}
+
+// ==================== NAVIGATION & RENDER ====================
+function switchTab(tab) {
+  state.activeTab = tab;
+  document.querySelectorAll('.tab-section').forEach(el => el.classList.add('hidden'));
+  document.getElementById('tab-' + tab).classList.remove('hidden');
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-active'));
+  document.getElementById('nav-' + tab).classList.add('tab-active');
+  if (tab === 'dashboard') renderDashboard();
+}
+
+function renderAll() {
+  document.getElementById('badgeMasterCount').textContent = state.master.length;
+  const pendingDmg = state.damaged.filter(d => !String(d.done || '').trim()).length;
+  document.getElementById('badgePendingDmg').textContent = pendingDmg;
+  if (state.config && state.config.lastUpdatedBy) {
+    document.getElementById('lastUpdateMeta').textContent = 'Cập nhật: ' + state.config.lastUpdatedBy;
+  }
+  renderDashboard();
+  renderMaster();
+  renderRequirements();
+  renderDamaged();
+  renderPurchases();
+  populateDropdowns();
+  switchTab(state.activeTab);
+}
+
+// ==================== TAB 1: DASHBOARD ====================
+function renderDashboard() {
+  const total = state.master.length;
+  const ok = state.master.filter(x => x.status === 'OK').length;
+  const ng = state.master.filter(x => x.status === 'NG').length;
+  const repair = state.master.filter(x => x.status === 'Under Repair').length;
+  const activeTeams = new Set(state.master.map(x => x.team)).size;
+  const totalCost = state.purchases.reduce((sum, p) => sum + (Number(p.purchaseCost) || 0) + (Number(p.repairCost) || 0), 0) + state.damaged.reduce((sum, d) => sum + (Number(d.repairCost) || 0), 0);
+
+  document.getElementById('kpiTotal').textContent = total;
+  document.getElementById('kpiOk').textContent = ok;
+  document.getElementById('kpiNg').textContent = ng;
+  document.getElementById('kpiRepair').textContent = repair;
+  document.getElementById('kpiTeams').textContent = activeTeams;
+  document.getElementById('kpiCost').textContent = formatVnd(totalCost);
+
+  const ngItems = state.master.filter(x => x.status !== 'OK');
+  const alertBox = document.getElementById('ngAlertBox');
+  if (ngItems.length > 0) {
+    alertBox.classList.remove('hidden');
+    document.getElementById('ngAlertList').innerHTML = ngItems.map(item => `
+      <button onclick="jumpToItem('${escapeAttr(item.id)}')" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-red-200 hover:bg-red-100 text-xs text-red-800 shadow-xs transition">
+        <span class="font-mono font-bold">${escapeHtml(item.id)}</span>
+        <span class="text-slate-600">${escapeHtml(item.vi || item.en)}</span>
+        <span class="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] font-bold">${escapeHtml(item.team.replace(' Team',''))}</span>
+      </button>
+    `).join('');
+  } else {
+    alertBox.classList.add('hidden');
+  }
+
+  const teamStats = getTeams().map(team => {
+    const items = state.master.filter(x => x.team === team);
+    const std = state.requirements.filter(r => r.team === team).reduce((s, r) => s + (Number(r.std) || 0), 0);
+    const tOk = items.filter(x => x.status === 'OK').length;
+    const tNg = items.filter(x => x.status !== 'OK').length;
+    return { team, actual: items.length, std, ok: tOk, ng: tNg, gap: items.length - std };
+  });
+
+  document.getElementById('teamCardsGrid').innerHTML = teamStats.map(s => {
+    const borderCls = s.ng > 0 ? 'border-red-300 bg-red-50/30' : 'border-slate-200 bg-white';
+    const pct = s.actual > 0 ? Math.round((s.ok / s.actual) * 100) : 100;
+    return `
+      <div onclick="jumpToTeam('${escapeAttr(s.team)}')" class="cursor-pointer p-3.5 rounded-xl shadow-sm border ${borderCls} hover:border-emerald-500 hover:shadow transition">
+        <div class="flex items-start justify-between gap-1">
+          <div class="font-bold text-xs sm:text-sm text-slate-800 leading-snug">${escapeHtml(s.team)}</div>
+          ${s.ng > 0 ? `<span class="px-1.5 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-bold">${s.ng} NG</span>` : `<span class="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold">OK</span>`}
+        </div>
+        <div class="mt-2.5 flex items-end justify-between">
+          <div>
+            <span class="text-xl font-black text-slate-800">${s.ok}</span>
+            <span class="text-xs text-slate-400">/${s.actual} máy</span>
+          </div>
+          <div class="text-[11px] text-slate-500">Chuẩn: <strong>${s.std}</strong></div>
+        </div>
+        <div class="mt-2 w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+          <div class="h-full ${s.ng > 0 ? 'bg-amber-500' : 'bg-emerald-500'}" style="width:${pct}%"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  if (typeof Chart !== 'undefined') {
+    const barCtx = document.getElementById('teamBarChart').getContext('2d');
+    if (barChartInst) barChartInst.destroy();
+    barChartInst = new Chart(barCtx, {
+      type: 'bar',
+      data: {
+        labels: teamStats.map(s => s.team.replace(' Team', '')),
+        datasets: [
+          { label: 'OK', data: teamStats.map(s => s.ok), backgroundColor: '#10b981', borderRadius: 4 },
+          { label: 'NG / Repair', data: teamStats.map(s => s.ng), backgroundColor: '#ef4444', borderRadius: 4 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { x: { stacked: true, ticks: { font: { size: 10 } } }, y: { stacked: true, beginAtZero: true } },
+        plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } }
+      }
+    });
+
+    const typeCounts = {};
+    state.master.forEach(m => { typeCounts[m.vi || m.en] = (typeCounts[m.vi || m.en] || 0) + 1; });
+    const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+    const colors = ['#2563eb','#0891b2','#059669','#d97706','#7c3aed','#db2777','#4f46e5','#ea580c','#16a34a','#64748b','#0d9488','#dc2626','#9333ea'];
+
+    const dCtx = document.getElementById('typeDoughnutChart').getContext('2d');
+    if (doughnutChartInst) doughnutChartInst.destroy();
+    doughnutChartInst = new Chart(dCtx, {
+      type: 'doughnut',
+      data: {
+        labels: sortedTypes.map(x => x[0]),
+        datasets: [{ data: sortedTypes.map(x => x[1]), backgroundColor: colors, borderWidth: 1 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: { size: 10 } } } }
+      }
+    });
+  }
+}
+
+function jumpToTeam(team) {
+  document.getElementById('filterTeam').value = team;
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('searchMaster').value = '';
+  renderMaster();
+  switchTab('master');
+}
+function jumpToStatus(status) {
+  document.getElementById('filterTeam').value = '';
+  document.getElementById('filterStatus').value = status;
+  document.getElementById('searchMaster').value = '';
+  renderMaster();
+  switchTab('master');
+}
+function jumpToItem(ctrlId) {
+  document.getElementById('filterTeam').value = '';
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('searchMaster').value = ctrlId;
+  renderMaster();
+  switchTab('master');
+}
+
+// ==================== TAB 2: MASTER LIST ====================
+function renderMaster() {
+  const q = document.getElementById('searchMaster').value.trim().toLowerCase();
+  const team = document.getElementById('filterTeam').value;
+  const type = document.getElementById('filterType').value;
+  const status = document.getElementById('filterStatus').value;
+  const isAdmin = state.user && state.user.role === 'Admin';
+
+  const filtered = state.master.filter(m => {
+    if (team && m.team !== team) return false;
+    if (type && m.en !== type) return false;
+    if (status && m.status !== status) return false;
+    if (q) {
+      const hay = `${m.id} ${m.en} ${m.vi} ${m.team} ${m.model || ''} ${m.serial || ''} ${m.note || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const tbody = document.getElementById('masterTableBody');
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="py-8 text-center text-slate-400">Không tìm thấy thiết bị nào phù hợp.</td></tr>';
+  } else {
+    tbody.innerHTML = filtered.map(m => {
+      const stCls = m.status === 'OK' ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                  : m.status === 'NG' ? 'bg-red-50 text-red-700 border-red-300 font-bold'
+                  : 'bg-amber-50 text-amber-700 border-amber-300 font-bold';
+      return `
+        <tr class="hover:bg-blue-50/40 transition">
+          <td class="py-2.5 px-3 font-mono font-bold text-blue-900 whitespace-nowrap">${escapeHtml(m.id)}</td>
+          <td class="py-2.5 px-3">
+            <div class="font-semibold text-slate-800">${escapeHtml(m.en)}</div>
+            <div class="text-[11px] text-slate-500">${escapeHtml(m.vi)}</div>
+          </td>
+          <td class="py-2.5 px-3 whitespace-nowrap text-slate-700">${escapeHtml(m.team)}</td>
+          <td class="py-2.5 px-3">
+            <select onchange="quickChangeStatus('${escapeAttr(m.id)}', this.value)" class="px-2 py-1 rounded-lg border text-xs ${stCls}">
+              <option value="OK" ${m.status==='OK'?'selected':''}>OK</option>
+              <option value="NG" ${m.status==='NG'?'selected':''}>NG</option>
+              <option value="Under Repair" ${m.status==='Under Repair'?'selected':''}>Under Repair</option>
+            </select>
+          </td>
+          <td class="py-2.5 px-3 text-xs text-slate-600 max-w-[240px]">
+            ${m.model ? `<span class="inline-block mr-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[10px]">${escapeHtml(m.model)}</span>` : ''}
+            ${m.serial ? `<span class="inline-block mr-1 font-mono text-[11px] text-blue-700">SN:${escapeHtml(m.serial)}</span>` : ''}
+            <span class="truncate" title="${escapeAttr(m.note)}">${escapeHtml(m.note || (!m.model && !m.serial ? '—' : ''))}</span>
+          </td>
+          <td class="py-2.5 px-3 text-right whitespace-nowrap space-x-1">
+            <button onclick="openReportDamageModal('${escapeAttr(m.id)}')" class="px-2 py-1 rounded bg-red-50 hover:bg-red-100 text-red-700 text-[11px] font-semibold border border-red-200">Báo hỏng</button>
+            <button onclick="openItemModal('${escapeAttr(m.id)}')" class="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium">Sửa</button>
+            ${isAdmin ? `<button onclick="deleteItem('${escapeAttr(m.id)}')" class="px-2 py-1 rounded bg-slate-100 hover:bg-red-600 hover:text-white text-slate-500 text-[11px]">Xóa</button>` : ''}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+  document.getElementById('masterFooter').textContent = `Hiển thị ${filtered.length} / ${state.master.length} thiết bị`;
+}
+
+function quickChangeStatus(id, newStatus) {
+  const item = state.master.find(x => x.id === id);
+  if (!item) return;
+  item.status = newStatus;
+  renderAll();
+  persistSections(['master']);
+  toast(`Đã đổi ${id} → ${newStatus}`);
+}
+
+function openItemModal(editId) {
+  populateDropdowns();
+  toggleQuickAddType(false);
+  toggleQuickAddTeam(false);
+  const modal = document.getElementById('itemModal');
+  if (editId) {
+    const item = state.master.find(x => x.id === editId);
+    if (!item) return;
+    document.getElementById('itemModalTitle').textContent = 'Chỉnh sửa thiết bị: ' + editId;
+    document.getElementById('editItemOrigId').value = item.id;
+    document.getElementById('itemTypeSelect').value = item.en;
+    document.getElementById('itemCtrlId').value = item.id;
+    document.getElementById('itemTeamSelect').value = item.team;
+    document.getElementById('itemStatusSelect').value = item.status;
+    document.getElementById('itemModel').value = item.model || '';
+    document.getElementById('itemSerial').value = item.serial || '';
+    document.getElementById('itemNote').value = item.note || '';
+  } else {
+    document.getElementById('itemModalTitle').textContent = 'Thêm thiết bị mới';
+    document.getElementById('editItemOrigId').value = '';
+    document.getElementById('itemTypeSelect').selectedIndex = 0;
+    document.getElementById('itemTeamSelect').selectedIndex = 0;
+    document.getElementById('itemStatusSelect').value = 'OK';
+    document.getElementById('itemModel').value = '';
+    document.getElementById('itemSerial').value = '';
+    document.getElementById('itemNote').value = '';
+    suggestNextControlNumber();
+  }
+  modal.classList.remove('hidden');
+}
+
+function suggestNextControlNumber() {
+  if (document.getElementById('editItemOrigId').value) return;
+  const en = document.getElementById('itemTypeSelect').value;
+  const meta = getEquipTypes().find(e => e.en === en);
+  if (!meta) return;
+  const prefix = meta.prefix;
+  let maxNum = 0;
+  state.master.forEach(m => {
+    if (m.id.startsWith(prefix)) {
+      const n = parseInt(m.id.slice(prefix.length), 10);
+      if (!isNaN(n) && n > maxNum) maxNum = n;
+    }
+  });
+  const padLen = prefix === 'PDH-S-' ? 2 : 3;
+  document.getElementById('itemCtrlId').value = prefix + String(maxNum + 1).padStart(padLen, '0');
+}
+
+function saveItemForm(e) {
+  e.preventDefault();
+  const origId = document.getElementById('editItemOrigId').value;
+  const en = document.getElementById('itemTypeSelect').value;
+  const meta = getEquipTypes().find(x => x.en === en) || { en, vi: '' };
+  const id = document.getElementById('itemCtrlId').value.trim();
+  const team = document.getElementById('itemTeamSelect').value;
+  const status = document.getElementById('itemStatusSelect').value;
+  const model = document.getElementById('itemModel').value.trim();
+  const serial = document.getElementById('itemSerial').value.trim();
+  const note = document.getElementById('itemNote').value.trim();
+
+  if (!origId && state.master.some(x => x.id.toLowerCase() === id.toLowerCase())) {
+    alert('Mã thiết bị ' + id + ' đã tồn tại!');
+    return;
+  }
+
+  const obj = { id, en: meta.en, vi: meta.vi, team, status, model, serial, note };
+  if (origId) {
+    const idx = state.master.findIndex(x => x.id === origId);
+    if (idx >= 0) state.master[idx] = obj;
+  } else {
+    state.master.push(obj);
+  }
+
+  closeModal('itemModal');
+  renderAll();
+  persistSections(['master']);
+  toast(origId ? `✅ Đã cập nhật ${id}` : `✅ Đã thêm thiết bị ${id}`);
+}
+
+function deleteItem(id) {
+  if (!confirm(`Bạn chắc chắn muốn xóa thiết bị ${id} khỏi danh sách?`)) return;
+  state.master = state.master.filter(x => x.id !== id);
+  renderAll();
+  persistSections(['master']);
+  toast(`🗑️ Đã xóa ${id}`);
+}
+
+// ==================== TAB 3: TEAM REQUIREMENT ====================
+function renderRequirements() {
+  const filterTeam = document.getElementById('filterReqTeam').value;
+  const rows = state.requirements.filter(r => !filterTeam || r.team === filterTeam);
+
+  document.getElementById('reqTableBody').innerHTML = rows.map(r => {
+    const actualItems = state.master.filter(m => m.team === r.team && m.id.startsWith(r.prefix));
+    const actual = actualItems.length;
+    const ok = actualItems.filter(m => m.status === 'OK').length;
+    const ng = actual - ok;
+    const gap = actual - (Number(r.std) || 0);
+    let actionHtml = '<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-semibold">Đủ (Enough)</span>';
+    if (ng > 0) actionHtml = `<span class="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-[11px] font-bold">Hỏng ${ng} máy</span>`;
+    else if (gap < 0) actionHtml = `<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold">Thiếu ${Math.abs(gap)}</span>`;
+    else if (gap > 0) actionHtml = `<span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[11px] font-semibold">Dư ${gap}</span>`;
+
+    return `
+      <tr class="hover:bg-slate-50">
+        <td class="py-2.5 px-3 font-semibold text-slate-800 whitespace-nowrap">${escapeHtml(r.team)}</td>
+        <td class="py-2.5 px-3 font-mono text-xs text-slate-500">${escapeHtml(r.prefix)}</td>
+        <td class="py-2.5 px-3">${escapeHtml(r.equip)}</td>
+        <td class="py-2.5 px-3 text-center">
+          <input type="number" min="0" value="${r.std}" onchange="updateStdQty('${escapeAttr(r.team)}','${escapeAttr(r.prefix)}', this.value)" class="w-16 text-center px-1.5 py-1 border border-slate-300 rounded-lg font-bold text-blue-800 focus:ring-2 focus:ring-blue-500" />
+        </td>
+        <td class="py-2.5 px-3 text-center font-bold">${actual}</td>
+        <td class="py-2.5 px-3 text-center text-emerald-700 font-semibold">${ok}</td>
+        <td class="py-2.5 px-3 text-center ${ng > 0 ? 'text-red-600 font-bold' : 'text-slate-400'}">${ng}</td>
+        <td class="py-2.5 px-3 text-center font-bold ${gap < 0 ? 'text-red-600' : gap > 0 ? 'text-blue-600' : 'text-slate-500'}">${gap > 0 ? '+' + gap : gap}</td>
+        <td class="py-2.5 px-3 whitespace-nowrap">${actionHtml}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function updateStdQty(team, prefix, val) {
+  const row = state.requirements.find(r => r.team === team && r.prefix === prefix);
+  if (!row) return;
+  row.std = Math.max(0, parseInt(val, 10) || 0);
+  renderDashboard();
+  renderRequirements();
+  persistSections(['requirements']);
+  toast(`Đã cập nhật định mức ${team} (${prefix}) = ${row.std}`);
+}
+
+function openAddReqModal() {
+  populateDropdowns();
+  document.getElementById('reqNewStd').value = 1;
+  document.getElementById('addReqModal').classList.remove('hidden');
+}
+
+function saveAddReqForm(e) {
+  e.preventDefault();
+  const team = document.getElementById('reqNewTeam').value;
+  const en = document.getElementById('reqNewType').value;
+  const std = Math.max(1, parseInt(document.getElementById('reqNewStd').value, 10) || 1);
+  const meta = getEquipTypes().find(x => x.en === en);
+  if (!meta) return;
+  const existing = state.requirements.find(r => r.team === team && r.prefix === meta.prefix);
+  if (existing) {
+    existing.std = std;
+    toast(`✅ Đã cập nhật định mức ${team} — ${meta.en} = ${std}`);
+  } else {
+    state.requirements.push({ team, prefix: meta.prefix, equip: `${meta.en} / ${meta.vi}`, std });
+    toast(`✅ Đã thêm định mức ${team} — ${meta.en} = ${std}`);
+  }
+  closeModal('addReqModal');
+  renderAll();
+  persistSections(['requirements']);
+}
+
+// ==================== TAB 4: DAMAGED LOG (V2) ====================
+function renderDamaged() {
+  const q = document.getElementById('searchDmg').value.trim().toLowerCase();
+  const st = document.getElementById('filterDmgStatus').value;
+  const fTeam = document.getElementById('filterDmgTeam').value;
+  const isAdmin = state.user && state.user.role === 'Admin';
+
+  const sorted = [...state.damaged].sort((a, b) => (Number(b.no) || 0) - (Number(a.no) || 0));
+  const filtered = sorted.filter(d => {
+    const isDone = Boolean(String(d.done || '').trim());
+    if (st === 'pending' && isDone) return false;
+    if (st === 'done' && !isDone) return false;
+    if (fTeam) {
+      const tLow = String(d.team || '').toLowerCase();
+      const shortF = fTeam.toLowerCase().replace(' team', '').trim();
+      const matchTeam = tLow === fTeam.toLowerCase() || tLow.includes(shortF) || (shortF === 'gear cutting' && tLow.includes('gc')) || (shortF === 'sz & visual' && (tLow.includes('softzone') || tLow.includes('sz')));
+      if (!matchTeam) return false;
+    }
+    if (q) {
+      const hay = `${d.no} ${d.date} ${d.pic} ${d.team} ${d.item} ${d.ctrl} ${d.issue || ''} ${d.actionType || ''} ${d.remark || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const tbody = document.getElementById('dmgTableBody');
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" class="py-8 text-center text-slate-400">Không có bản ghi phù hợp.</td></tr>';
+  } else {
+    tbody.innerHTML = filtered.map(d => {
+      const isDone = Boolean(String(d.done || '').trim());
+      const actBadge = d.actionType ? `<span class="inline-block px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-semibold">${escapeHtml(d.actionType)}</span>` : '';
+      const costBadge = Number(d.repairCost) > 0 ? `<span class="inline-block ml-1 text-[10px] font-bold text-purple-700">${formatVnd(d.repairCost)}</span>` : '';
+      return `
+        <tr class="${isDone ? 'hover:bg-slate-50' : 'bg-red-50/40 hover:bg-red-50/70'}">
+          <td class="py-2 px-3 font-mono text-xs text-slate-500">#${d.no}</td>
+          <td class="py-2 px-3 whitespace-nowrap text-xs">${escapeHtml(d.date)}</td>
+          <td class="py-2 px-3 font-medium whitespace-nowrap">${escapeHtml(d.pic)}</td>
+          <td class="py-2 px-3 whitespace-nowrap">${escapeHtml(d.team)}</td>
+          <td class="py-2 px-3">${escapeHtml(d.item)}</td>
+          <td class="py-2 px-3 font-mono font-bold text-slate-800 whitespace-nowrap">${escapeHtml(d.ctrl)}</td>
+          <td class="py-2 px-3 text-xs max-w-[220px]">
+            ${d.issue ? `<div class="text-slate-800 font-medium">${escapeHtml(d.issue)}</div>` : ''}
+            <div class="mt-0.5">${actBadge}${costBadge}${!d.issue && !actBadge ? '<span class="text-slate-400">—</span>' : ''}</div>
+          </td>
+          <td class="py-2 px-3 text-xs text-slate-600 max-w-[160px] truncate" title="${escapeAttr(d.remark)}">${escapeHtml(d.remark || '—')}</td>
+          <td class="py-2 px-3 whitespace-nowrap">
+            ${isDone
+              ? `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-semibold">✅ ${escapeHtml(d.done)}</span>`
+              : `<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold">⏳ Đang chờ</span>`
+            }
+          </td>
+          <td class="py-2 px-3 text-right whitespace-nowrap space-x-1">
+            ${!isDone ? `<button onclick="markDamagedDone(${d.no})" class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold">Done</button>` : ''}
+            <button onclick="openEditDamageModal(${d.no})" class="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium">Sửa</button>
+            ${isAdmin ? `<button onclick="deleteDamagedRow(${d.no})" class="px-2 py-1 rounded bg-slate-100 hover:bg-red-600 hover:text-white text-slate-500 text-[11px]">Xóa</button>` : ''}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+  const ftr = document.getElementById('dmgFooter');
+  if (ftr) {
+    const totalDmgRepair = filtered.reduce((s, d) => s + (Number(d.repairCost) || 0), 0);
+    ftr.textContent = `Hiển thị ${filtered.length} / ${state.damaged.length} phiếu hỏng` + (totalDmgRepair > 0 ? ` • Tổng phí sửa ghi nhận: ${formatVnd(totalDmgRepair)}` : '');
+  }
+}
+
+function onDmgCtrlInput() {
+  const ctrl = document.getElementById('dmgCtrl').value.trim().toLowerCase();
+  const found = state.master.find(m => m.id.toLowerCase() === ctrl);
+  if (found) {
+    document.getElementById('dmgTeam').value = found.team;
+    document.getElementById('dmgItem').value = found.en;
+  }
+}
+
+function generateNextDamagedCode() {
+  const itemInput = document.getElementById('dmgItem').value.trim().toLowerCase();
+  const types = getEquipTypes();
+  let matched = types.find(t => t.en.toLowerCase() === itemInput || t.vi.toLowerCase() === itemInput);
+  if (!matched && types.length > 0) matched = types[0];
+  const prefix = matched ? matched.prefix : 'DMG-';
+  const maxNo = state.damaged.reduce((m, d) => Math.max(m, Number(d.no) || 0), 0);
+  document.getElementById('dmgCtrl').value = prefix + (maxNo + 1);
+  if (matched && !itemInput) document.getElementById('dmgItem').value = matched.en;
+}
+
+function openReportDamageModal(ctrlId) {
+  populateDropdowns();
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('dmgModalTitle').textContent = '⚠️ Ghi nhận hư hỏng / Sửa chữa mới';
+  document.getElementById('editDmgNo').value = '';
+  document.getElementById('dmgDate').value = today;
+  document.getElementById('dmgPic').value = state.user ? (state.user.name || state.user.username) : '';
+  document.getElementById('dmgIssue').value = '';
+  document.getElementById('dmgActionType').value = 'Chờ kiểm tra';
+  document.getElementById('dmgRepairCost').value = 0;
+  document.getElementById('dmgRemark').value = '';
+  document.getElementById('dmgDone').value = '';
+  document.getElementById('dmgNewStatus').value = 'NG';
+
+  if (ctrlId) {
+    const item = state.master.find(x => x.id === ctrlId);
+    if (item) {
+      document.getElementById('dmgCtrl').value = item.id;
+      document.getElementById('dmgTeam').value = item.team;
+      document.getElementById('dmgItem').value = item.en;
+    }
+  } else {
+    document.getElementById('dmgCtrl').value = '';
+    document.getElementById('dmgTeam').value = getTeams()[0] || '';
+    document.getElementById('dmgItem').value = '';
+  }
+  document.getElementById('damageModal').classList.remove('hidden');
+}
+
+function openEditDamageModal(no) {
+  populateDropdowns();
+  const row = state.damaged.find(d => Number(d.no) === Number(no));
+  if (!row) return;
+  document.getElementById('dmgModalTitle').textContent = '✏️ Chỉnh sửa phiếu hỏng #' + row.no;
+  document.getElementById('editDmgNo').value = row.no;
+  document.getElementById('dmgCtrl').value = row.ctrl || '';
+  document.getElementById('dmgDate').value = toIsoDate(row.date) || new Date().toISOString().slice(0, 10);
+  document.getElementById('dmgPic').value = row.pic || '';
+  document.getElementById('dmgTeam').value = row.team || '';
+  document.getElementById('dmgItem').value = row.item || '';
+  document.getElementById('dmgIssue').value = row.issue || '';
+  document.getElementById('dmgActionType').value = row.actionType || 'Chờ kiểm tra';
+  document.getElementById('dmgRepairCost').value = Number(row.repairCost) || 0;
+  document.getElementById('dmgRemark').value = row.remark || '';
+  document.getElementById('dmgDone').value = row.done || '';
+  document.getElementById('dmgNewStatus').value = 'KEEP';
+  document.getElementById('damageModal').classList.remove('hidden');
+}
+
+function saveDamageForm(e) {
+  e.preventDefault();
+  const editNo = document.getElementById('editDmgNo').value;
+  const ctrl = document.getElementById('dmgCtrl').value.trim();
+  const date = document.getElementById('dmgDate').value;
+  const pic = document.getElementById('dmgPic').value.trim();
+  const team = document.getElementById('dmgTeam').value.trim();
+  const item = document.getElementById('dmgItem').value.trim();
+  const issue = document.getElementById('dmgIssue').value.trim();
+  const actionType = document.getElementById('dmgActionType').value;
+  const repairCost = Math.max(0, parseFloat(document.getElementById('dmgRepairCost').value) || 0);
+  const remark = document.getElementById('dmgRemark').value.trim();
+  const done = document.getElementById('dmgDone').value.trim();
+  const newStatus = document.getElementById('dmgNewStatus').value;
+
+  let savedNo;
+  if (editNo) {
+    const idx = state.damaged.findIndex(d => Number(d.no) === Number(editNo));
+    if (idx >= 0) {
+      savedNo = state.damaged[idx].no;
+      state.damaged[idx] = { no: savedNo, date, pic, team, item, ctrl, issue, actionType, repairCost, remark, done };
+    }
+  } else {
+    const maxNo = state.damaged.reduce((m, d) => Math.max(m, Number(d.no) || 0), 0);
+    savedNo = maxNo + 1;
+    state.damaged.push({ no: savedNo, date, pic, team, item, ctrl, issue, actionType, repairCost, remark, done });
+  }
+
+  const sections = ['damaged'];
+  if (newStatus !== 'KEEP') {
+    const mItem = state.master.find(x => x.id.toLowerCase() === ctrl.toLowerCase());
+    if (mItem) {
+      mItem.status = newStatus;
+      sections.push('master');
+    }
+  }
+
+  closeModal('damageModal');
+  renderAll();
+  persistSections(sections);
+  toast(editNo ? `✅ Đã cập nhật phiếu hỏng #${savedNo}` : `⚠️ Đã ghi nhận phiếu hỏng #${savedNo} (${ctrl})`);
+}
+
+function markDamagedDone(no) {
+  const row = state.damaged.find(d => Number(d.no) === Number(no));
+  if (!row) return;
+  row.done = new Date().toISOString().slice(0, 10);
+
+  const sections = ['damaged'];
+  const mItem = state.master.find(x => x.id.toLowerCase() === String(row.ctrl).toLowerCase());
+  if (mItem && mItem.status !== 'OK') {
+    if (confirm(`Phiếu #${no} (${row.ctrl}) đã Done! Chuyển trạng thái máy ${row.ctrl} trong Master List về OK luôn không?`)) {
+      mItem.status = 'OK';
+      sections.push('master');
+    }
+  }
+
+  renderAll();
+  persistSections(sections);
+  toast(`✅ Đã đánh dấu Done cho phiếu #${no}`);
+}
+
+function deleteDamagedRow(no) {
+  if (!confirm(`Bạn chắc chắn muốn xóa phiếu hỏng #${no}?`)) return;
+  state.damaged = state.damaged.filter(d => Number(d.no) !== Number(no));
+  renderAll();
+  persistSections(['damaged']);
+  toast(`🗑️ Đã xóa phiếu hỏng #${no}`);
+}
+
+// ==================== TAB 5: PURCHASE & COST ====================
+function renderPurchases() {
+  const totalCount = state.purchases.length;
+  const pendingCount = state.purchases.filter(p => !String(p.receivedDate || '').trim()).length;
+  const buyCost = state.purchases.reduce((s, p) => s + (Number(p.purchaseCost) || 0), 0);
+  const repCost = state.purchases.reduce((s, p) => s + (Number(p.repairCost) || 0), 0);
+
+  document.getElementById('pTotalCount').textContent = totalCount;
+  document.getElementById('pPendingCount').textContent = pendingCount;
+  document.getElementById('pBuyCost').textContent = formatVnd(buyCost);
+  document.getElementById('pRepairCost').textContent = formatVnd(repCost);
+
+  const tbody = document.getElementById('purchTableBody');
+  if (state.purchases.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-slate-400">Chưa có yêu cầu mua hàng nào.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = state.purchases.map((p, idx) => {
+    const total = (Number(p.purchaseCost) || 0) + (Number(p.repairCost) || 0);
+    let badge = '<span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-semibold">Chờ duyệt</span>';
+    if (p.receivedDate) badge = '<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[11px] font-bold">Đã nhận</span>';
+    else if (p.approvalDate) badge = '<span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[11px] font-bold">Đã duyệt</span>';
+
+    return `
+      <tr class="hover:bg-slate-50">
+        <td class="py-2.5 px-3 font-mono font-bold text-purple-800 whitespace-nowrap">${escapeHtml(p.id)}</td>
+        <td class="py-2.5 px-3 text-xs whitespace-nowrap">
+          <div>YC: <strong>${escapeHtml(p.reqDate || '—')}</strong></div>
+          <div class="text-slate-500">Duyệt: ${escapeHtml(p.approvalDate || '—')} | Nhận: ${escapeHtml(p.receivedDate || '—')}</div>
+        </td>
+        <td class="py-2.5 px-3 whitespace-nowrap">${escapeHtml(p.team)}</td>
+        <td class="py-2.5 px-3">
+          <div class="font-semibold text-slate-800">${escapeHtml(p.equipment)}</div>
+          <div class="text-xs text-slate-500 max-w-xs">${escapeHtml(p.reason || '')} ${p.remark ? '(' + escapeHtml(p.remark) + ')' : ''}</div>
+        </td>
+        <td class="py-2.5 px-3 text-center font-bold">${p.qty}</td>
+        <td class="py-2.5 px-3 text-right font-bold whitespace-nowrap">${formatVnd(total)}</td>
+        <td class="py-2.5 px-3 whitespace-nowrap">${badge}</td>
+        <td class="py-2.5 px-3 text-right whitespace-nowrap space-x-1">
+          <button onclick="openPurchaseModal(${idx})" class="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-xs">Sửa</button>
+          <button onclick="deletePurchase(${idx})" class="px-2 py-1 rounded bg-slate-100 hover:bg-red-600 hover:text-white text-xs">Xóa</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function openPurchaseModal(idx) {
+  if (typeof idx === 'number' && idx >= 0) {
+    const p = state.purchases[idx];
+    document.getElementById('purchModalTitle').textContent = 'Chỉnh sửa ' + p.id;
+    document.getElementById('editPurchIdx').value = idx;
+    document.getElementById('pId').value = p.id;
+    document.getElementById('pTeam').value = p.team;
+    document.getElementById('pEquipment').value = p.equipment;
+    document.getElementById('pReason').value = p.reason || '';
+    document.getElementById('pReqDate').value = toIsoDate(p.reqDate);
+    document.getElementById('pAppDate').value = toIsoDate(p.approvalDate);
+    document.getElementById('pRecDate').value = toIsoDate(p.receivedDate);
+    document.getElementById('pQty').value = p.qty || 1;
+    document.getElementById('pUnitPrice').value = p.unitPrice || 0;
+    document.getElementById('pRepair').value = p.repairCost || 0;
+    document.getElementById('pRemark').value = p.remark || '';
+  } else {
+    document.getElementById('purchModalTitle').textContent = 'Thêm yêu cầu mua hàng (PR)';
+    document.getElementById('editPurchIdx').value = -1;
+    document.getElementById('pId').value = 'PR-' + String(state.purchases.length + 1).padStart(3, '0');
+    document.getElementById('pEquipment').value = '';
+    document.getElementById('pReason').value = '';
+    document.getElementById('pReqDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('pAppDate').value = '';
+    document.getElementById('pRecDate').value = '';
+    document.getElementById('pQty').value = 1;
+    document.getElementById('pUnitPrice').value = 0;
+    document.getElementById('pRepair').value = 0;
+    document.getElementById('pRemark').value = state.user ? (state.user.name || state.user.username) : '';
+  }
+  document.getElementById('purchaseModal').classList.remove('hidden');
+}
+
+function savePurchaseForm(e) {
+  e.preventDefault();
+  const idx = parseInt(document.getElementById('editPurchIdx').value, 10);
+  const qty = Math.max(1, parseInt(document.getElementById('pQty').value, 10) || 1);
+  const unitPrice = Math.max(0, parseFloat(document.getElementById('pUnitPrice').value) || 0);
+  const repairCost = Math.max(0, parseFloat(document.getElementById('pRepair').value) || 0);
+  const obj = {
+    id: document.getElementById('pId').value.trim(),
+    reqDate: document.getElementById('pReqDate').value,
+    approvalDate: document.getElementById('pAppDate').value,
+    receivedDate: document.getElementById('pRecDate').value,
+    team: document.getElementById('pTeam').value,
+    equipment: document.getElementById('pEquipment').value.trim(),
+    reason: document.getElementById('pReason').value.trim(),
+    qty, unitPrice, repairCost, purchaseCost: qty * unitPrice,
+    remark: document.getElementById('pRemark').value.trim()
+  };
+
+  if (idx >= 0) state.purchases[idx] = obj;
+  else state.purchases.push(obj);
+
+  closeModal('purchaseModal');
+  renderAll();
+  persistSections(['purchases']);
+  toast(`✅ Đã lưu ${obj.id}`);
+}
+
+function deletePurchase(idx) {
+  if (!confirm('Xóa yêu cầu mua hàng này?')) return;
+  state.purchases.splice(idx, 1);
+  renderAll();
+  persistSections(['purchases']);
+  toast('🗑️ Đã xóa PR');
+}
+
+// ==================== POD AI ASSISTANT (BUILT-IN SMART ENGINE + GEMINI OPTIONAL) ====================
+function toggleAiChat() {
+  document.getElementById('aiChatPanel').classList.toggle('hidden');
+}
+
+function openAiKeyModal() {
+  document.getElementById('geminiKeyInput').value = (state.config && state.config.geminiKey) || '';
+  document.getElementById('aiKeyModal').classList.remove('hidden');
+}
+
+function updateAiKeyIndicator() {
+  const hasKey = Boolean(state.config && state.config.geminiKey);
+  document.getElementById('aiKeyIndicator').textContent = hasKey
+    ? 'Gemini AI + Phân tích nội bộ'
+    : 'Phân tích nội bộ (Chạy 100% không cần Key)';
+}
+
+async function saveAiKey() {
+  const key = document.getElementById('geminiKeyInput').value.trim();
+  state.config.geminiKey = key;
+  updateAiKeyIndicator();
+  closeModal('aiKeyModal');
+  await persistSections(['config']);
+  toast(key ? '✅ Đã lưu & đồng bộ Gemini API Key!' : 'Đã chuyển về chế độ Trợ lý nội bộ');
+}
+
+function initAiWelcome() {
+  state.aiHistory = [];
+  const box = document.getElementById('aiMessages');
+  box.innerHTML = '';
+  appendAiBubble('model', 'Chào bạn! Tôi là **POD AI Assistant**. Bạn có thể hỏi ngay mà **không cần API Key** (nhấn 4 nút gợi ý phía trên hoặc gõ mã máy như `AI-I-011`, tên xưởng như `Gear Cutting`, `Coating`, `Drilling`...). Nếu gắn thêm Gemini Key, tôi có thể trò chuyện mở rộng hơn.');
+}
+
+function clearAiChat() { initAiWelcome(); }
+
+function askQuickAi(text) {
+  document.getElementById('aiInput').value = text;
+  sendAiMessage({ preventDefault: () => {} });
+}
+
+// Smart local analyzer: always works behind any corporate firewall!
+function localSmartAnalyze(question) {
+  const q = question.toLowerCase();
+  const total = state.master.length;
+  const okItems = state.master.filter(m => m.status === 'OK');
+  const ngItems = state.master.filter(m => m.status !== 'OK');
+  const pendingDmg = state.damaged.filter(d => !String(d.done || '').trim());
+  const todayStr = new Date().toLocaleDateString('vi-VN');
+
+  // 1. Check specific Control Number mentioned
+  const directCtrl = state.master.filter(m => q.includes(m.id.toLowerCase()));
+  if (directCtrl.length > 0) {
+    const lines = directCtrl.map(m =>
+      `- **${m.id}** (${m.en} / ${m.vi})\n  • Khu vực: ${m.team}\n  • Trạng thái: **${m.status}**\n  • Ghi chú/Serial: ${m.note || 'Không có'}`
+    );
+    const dmgMatch = state.damaged.filter(d => directCtrl.some(m => d.ctrl.toLowerCase() === m.id.toLowerCase()));
+    if (dmgMatch.length > 0) {
+      lines.push('\n**Lịch sử hỏng liên quan:**');
+      dmgMatch.slice(-5).forEach(d => lines.push(`- #${d.no} (${d.date}) | PIC: ${d.pic} | ${d.remark || '—'} | Done: ${d.done || 'Chưa xong'}`));
+    }
+    return lines.join('\n');
+  }
+
+  // 2. Daily report
+  if (q.includes('báo cáo') || q.includes('report') || q.includes('tổng hợp')) {
+    const pct = total ? ((okItems.length / total) * 100).toFixed(1) : '0';
+    let out = `**BÁO CÁO KIỂM SOÁT THIẾT BỊ CẦM TAY (${todayStr})**\n`;
+    out += `- Tổng thiết bị quản lý: **${total}** máy (Đang OK: **${okItems.length}** — ${pct}%, NG/Đang sửa: **${ngItems.length}**)\n`;
+    if (ngItems.length > 0) {
+      out += `\n**1. Danh sách máy NG / Cần xử lý (${ngItems.length} máy):**\n`;
+      ngItems.forEach(m => { out += `- ${m.id} (${m.vi}) — ${m.team} [${m.status}] ${m.note ? '(' + m.note + ')' : ''}\n`; });
+    } else {
+      out += `\n**1. Thiết bị NG:** Hiện tại 100% máy đều đang OK.\n`;
+    }
+    const gaps = [];
+    state.requirements.forEach(r => {
+      const act = state.master.filter(m => m.team === r.team && m.id.startsWith(r.prefix)).length;
+      if (act !== r.std) gaps.push(`- ${r.team} (${r.equip}): Thực tế ${act} / Chuẩn ${r.std} (${act > r.std ? 'Dư +' + (act - r.std) : 'Thiếu ' + (r.std - act)})`);
+    });
+    out += `\n**2. Chênh lệch định mức (Standard Qty):**\n` + (gaps.length ? gaps.join('\n') : '- Toàn bộ khu vực đều khớp định mức chuẩn.');
+    const recentPending = pendingDmg.filter(d => Number(d.no) >= 120);
+    out += `\n\n**3. Nhật ký hỏng gần đây chưa Done (từ #120):** ${recentPending.length} phiếu\n`;
+    if (recentPending.length) {
+      recentPending.forEach(d => { out += `- #${d.no} (${d.date}): ${d.ctrl} (${d.item}) - ${d.team} - PIC: ${d.pic} [${d.remark || 'Chờ xử lý'}]\n`; });
+    }
+    const pendingPR = state.purchases.filter(p => !String(p.receivedDate || '').trim());
+    if (pendingPR.length) {
+      out += `\n**4. Yêu cầu mua hàng (PR) đang chờ nhận (${pendingPR.length}):**\n`;
+      pendingPR.forEach(p => { out += `- ${p.id}: ${p.equipment} (${p.team}, SL: ${p.qty}) — YC: ${p.reqDate}\n`; });
+    }
+    return out.trim();
+  }
+
+  // 3. NG items
+  if (q.includes('ng') || q.includes('hỏng gấp') || q.includes('lỗi') || q.includes('xử lý gấp')) {
+    if (ngItems.length === 0) return '✅ Hiện tại **không có thiết bị nào bị NG** trong Master List!';
+    const byTeam = {};
+    ngItems.forEach(m => { (byTeam[m.team] = byTeam[m.team] || []).push(m); });
+    let out = `🚨 Hiện có **${ngItems.length} thiết bị đang NG / Under Repair** cần xử lý:\n`;
+    Object.entries(byTeam).forEach(([team, arr]) => {
+      out += `\n**${team} (${arr.length} máy):**\n`;
+      arr.forEach(m => { out += `- **${m.id}** — ${m.en} (${m.vi}) [${m.status}]${m.note ? ' • Note: ' + m.note : ''}\n`; });
+    });
+    return out.trim();
+  }
+
+  // 4. Requirement gaps
+  if (q.includes('định mức') || q.includes('thiếu') || q.includes('dư') || q.includes('standard') || q.includes('gap')) {
+    const diffs = [];
+    const damagedAlerts = [];
+    state.requirements.forEach(r => {
+      const items = state.master.filter(m => m.team === r.team && m.id.startsWith(r.prefix));
+      const act = items.length;
+      const ng = items.filter(m => m.status !== 'OK').length;
+      if (act !== r.std) {
+        diffs.push(`- **${r.team}** | ${r.equip}: Thực tế **${act}** / Chuẩn **${r.std}** → **${act > r.std ? 'Dư +' + (act - r.std) : 'Thiếu ' + (r.std - act)}**`);
+      }
+      if (ng > 0) {
+        damagedAlerts.push(`- **${r.team}** | ${r.equip}: Có **${ng}/${act}** máy đang NG (chỉ còn ${act - ng} máy OK chạy được)`);
+      }
+    });
+    let out = '⚖️ **ĐỐI CHIẾU ĐỊNH MỨC CHUẨN (STANDARD QTY):**\n';
+    out += diffs.length ? diffs.join('\n') : '- Tất cả khu vực có tổng số máy bằng đúng định mức chuẩn.';
+    if (damagedAlerts.length) {
+      out += '\n\n⚠️ **Khu vực bị hụt máy chạy do đang có máy NG:**\n' + damagedAlerts.join('\n');
+    }
+    return out;
+  }
+
+  // 5. Pending damaged logs
+  if (q.includes('chưa done') || q.includes('pending') || q.includes('phiếu') || q.includes('nhật ký')) {
+    const recent = pendingDmg.filter(d => Number(d.no) >= 120);
+    let out = `⏳ Tổng số phiếu chưa điền ngày Done trong lịch sử: **${pendingDmg.length}** phiếu (trong đó các phiếu gần đây từ #120 trở đi có **${recent.length}** phiếu):\n`;
+    (recent.length ? recent : pendingDmg.slice(-10)).forEach(d => {
+      out += `- **#${d.no}** (${d.date}) | ${d.ctrl} (${d.item}) | ${d.team} | PIC: ${d.pic} | ${d.remark || '—'}\n`;
+    });
+    return out.trim();
+  }
+
+  // 6. Specific team query
+  const matchedTeam = getTeams().find(t => {
+    const short = t.toLowerCase().replace(' team', '').trim();
+    return q.includes(t.toLowerCase()) || q.includes(short) || (short === 'gear cutting' && q.includes('gc')) || (short === 'sz & visual' && (q.includes('softzone') || q.includes('sz')));
+  });
+  if (matchedTeam) {
+    const items = state.master.filter(m => m.team === matchedTeam);
+    const std = state.requirements.filter(r => r.team === matchedTeam).reduce((s, r) => s + r.std, 0);
+    const ng = items.filter(m => m.status !== 'OK');
+    const byType = {};
+    items.forEach(m => { byType[m.vi || m.en] = (byType[m.vi || m.en] || 0) + 1; });
+    let out = `🏭 **Tổng quan khu vực ${matchedTeam}:**\n- Tổng máy: **${items.length}** / Định mức chuẩn: **${std}** (OK: ${items.length - ng.length}, NG: ${ng.length})\n\n**Chi tiết theo loại máy:**\n`;
+    Object.entries(byType).forEach(([k, v]) => { out += `- ${k}: **${v}** máy\n`; });
+    if (ng.length) {
+      out += `\n**Máy đang NG tại ${matchedTeam}:**\n`;
+      ng.forEach(m => { out += `- **${m.id}** (${m.vi}) [${m.status}]\n`; });
+    }
+    return out.trim();
+  }
+
+  // 7. Specific equipment type query
+  const matchedEquip = getEquipTypes().find(e => q.includes(e.vi.toLowerCase()) || q.includes(e.en.toLowerCase()));
+  if (matchedEquip) {
+    const items = state.master.filter(m => m.en === matchedEquip.en);
+    const ng = items.filter(m => m.status !== 'OK');
+    const byTeam = {};
+    items.forEach(m => { byTeam[m.team] = (byTeam[m.team] || 0) + 1; });
+    let out = `🔧 **${matchedEquip.en} (${matchedEquip.vi}):**\n- Tổng toàn nhà máy: **${items.length}** máy (OK: ${items.length - ng.length}, NG: ${ng.length})\n- Phân bổ: ` + Object.entries(byTeam).map(([t, c]) => `${t.replace(' Team','')}: ${c}`).join(', ');
+    if (ng.length) out += `\n- Đang NG: ${ng.map(m => m.id + ' (' + m.team.replace(' Team','') + ')').join(', ')}`;
+    return out;
+  }
+
+  return `📊 **Tóm tắt nhanh hiện tại:** Nhà máy đang quản lý **${total} thiết bị** (**${okItems.length} OK**, **${ngItems.length} NG/Repair**) trên 10 khu vực.\n\nBạn có thể hỏi tôi:\n- Nhập **mã máy** (vd: \`AI-I-011\`, \`BE-M-004\`, \`CO-D-002\`)\n- Nhập **tên khu vực** (vd: \`Gear Cutting\`, \`Drilling\`, \`Coating\`, \`IH\`)\n- Nhập **tên máy** (vd: \`máy vát cạnh\`, \`súng bắn ốc\`, \`máy khoan pin\`)\n- Hoặc bấm 4 nút gợi ý phía trên để lấy báo cáo ngay!`;
+}
+
+function buildFactoryContext(question) {
+  const total = state.master.length;
+  const ok = state.master.filter(x => x.status === 'OK').length;
+  const ngItems = state.master.filter(x => x.status !== 'OK');
+  const pendingDmg = state.damaged.filter(d => !String(d.done || '').trim());
+
+  const teamSummary = getTeams().map(t => {
+    const items = state.master.filter(m => m.team === t);
+    const std = state.requirements.filter(r => r.team === t).reduce((s, r) => s + (Number(r.std) || 0), 0);
+    const tNg = items.filter(m => m.status !== 'OK').length;
+    return `- ${t}: Thực tế ${items.length} / Chuẩn ${std} (OK: ${items.length - tNg}, NG/Sửa: ${tNg}, Gap: ${items.length - std})`;
+  }).join('\n');
+
+  const ngText = ngItems.length
+    ? ngItems.map(x => `- ${x.id} | ${x.en} (${x.vi}) | ${x.team} | ${x.status} | Note: ${x.note || 'không'}`).join('\n')
+    : 'Không có máy nào NG.';
+
+  const pendingText = pendingDmg.length
+    ? pendingDmg.slice(-20).map(d => `- #${d.no} | Ngày ${d.date} | ${d.ctrl} (${d.item}) | ${d.team} | PIC: ${d.pic} | Remark: ${d.remark}`).join('\n')
+    : 'Tất cả phiếu hỏng đều đã Done.';
+
+  const prText = state.purchases.map(p => `- ${p.id}: ${p.equipment} (${p.team}), SL ${p.qty}, YC ${p.reqDate}, Duyệt ${p.approvalDate||'chưa'}, Nhận ${p.receivedDate||'chưa'}, Tổng tiền ${(Number(p.purchaseCost)||0)+(Number(p.repairCost)||0)} VND`).join('\n');
+
+  return `Ngày hiện tại: ${new Date().toLocaleDateString('vi-VN')}
+Tổng thiết bị: ${total} | OK: ${ok} | NG/Repair: ${ngItems.length}
+[THEO KHU VỰC]
+${teamSummary}
+[MÁY ĐANG NG / UNDER REPAIR]
+${ngText}
+[PHIẾU HƯ HỎNG CHƯA DONE (${pendingDmg.length} phiếu)]
+${pendingText}
+[MUA SẮM PR]
+${prText || 'Chưa có'}`;
+}
+
+async function sendAiMessage(e) {
+  e.preventDefault();
+  const input = document.getElementById('aiInput');
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = '';
+
+  appendAiBubble('user', q);
+  const apiKey = state.config && state.config.geminiKey;
+
+  // If no Gemini key -> answer instantly via built-in Smart Local Engine
+  if (!apiKey) {
+    const localReply = localSmartAnalyze(q);
+    appendAiBubble('model', localReply, true);
+    return;
+  }
+
+  const typingId = appendTypingBubble();
+  const sysPrompt = 'Bạn là POD AI Assistant - trợ lý quản lý thiết bị cầm tay cho kỹ sư nhà máy sản xuất vòng bi. Trả lời ngắn gọn, chính xác bằng tiếng Việt dựa trên dữ liệu thực tế sau. Nếu được yêu cầu soạn báo cáo, trình bày gọn gàng bằng gạch đầu dòng để copy gửi Zalo/Email ngay.\n\n' + buildFactoryContext(q);
+  const contents = state.aiHistory.slice(-6).map(m => ({
+    role: m.role === 'user' ? 'user' : 'model',
+    parts: [{ text: m.text }]
+  }));
+  contents.push({ role: 'user', parts: [{ text: q }] });
+
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+  let replyText = null;
+
+  for (let i = 0; i < models.length; i++) {
+    try {
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${models[i]}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: sysPrompt }] },
+          contents,
+          generationConfig: { temperature: 0.3, maxOutputTokens: 1200 }
+        })
+      });
+      const j = await resp.json();
+      if (resp.ok && j.candidates && j.candidates[0] && j.candidates[0].content) {
+        replyText = j.candidates[0].content.parts.map(p => p.text || '').join('');
+        break;
+      }
+      if (resp.status !== 404) break;
+    } catch (err) {
+      break;
+    }
+  }
+
+  removeEl(typingId);
+  if (replyText) {
+    state.aiHistory.push({ role: 'user', text: q }, { role: 'model', text: replyText });
+    appendAiBubble('model', replyText, true);
+  } else {
+    // Graceful fallback if corporate firewall blocks Gemini API
+    const fallback = localSmartAnalyze(q) + '\n\n_(Lưu ý: Không gọi được Gemini API từ mạng hiện tại nên đã tự động trả lời bằng bộ phân tích nội bộ.)_';
+    appendAiBubble('model', fallback, true);
+  }
+}
+
+function appendAiBubble(role, text, showCopy) {
+  const box = document.getElementById('aiMessages');
+  const wrap = document.createElement('div');
+  wrap.className = role === 'user' ? 'flex justify-end' : 'flex justify-start';
+
+  const formatted = escapeHtml(text)
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`(.*?)`/g, '<code class="px-1 py-0.5 rounded bg-slate-100 font-mono text-[11px]">$1</code>')
+    .replace(/\n/g, '<br>');
+
+  const bubble = document.createElement('div');
+  bubble.className = role === 'user'
+    ? 'max-w-[85%] px-3.5 py-2 rounded-2xl rounded-br-sm bg-emerald-700 text-white text-xs sm:text-sm leading-relaxed'
+    : 'max-w-[92%] px-3.5 py-2.5 rounded-2xl rounded-bl-sm bg-white border border-slate-200 text-slate-800 text-xs sm:text-sm leading-relaxed shadow-xs';
+  bubble.innerHTML = `<div>${formatted}</div>`;
+
+  if (showCopy) {
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'mt-2 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900';
+    copyBtn.textContent = '📋 Copy nội dung';
+    copyBtn.onclick = () => { navigator.clipboard.writeText(text); toast('📋 Đã copy vào bộ nhớ tạm!'); };
+    bubble.appendChild(copyBtn);
+  }
+
+  wrap.appendChild(bubble);
+  box.appendChild(wrap);
+  box.scrollTop = box.scrollHeight;
+}
+
+function appendTypingBubble() {
+  const id = 'typing_' + Date.now();
+  const box = document.getElementById('aiMessages');
+  const div = document.createElement('div');
+  div.id = id;
+  div.className = 'flex justify-start';
+  div.innerHTML = '<div class="px-3.5 py-2 rounded-2xl bg-white border border-slate-200 text-slate-500 text-xs flex gap-1"><span class="typing-dot">●</span><span class="typing-dot">●</span><span class="typing-dot">●</span></div>';
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  return id;
+}
+
+// ==================== EXCEL EXPORT / IMPORT ====================
+function exportExcel() {
+  const wb = XLSX.utils.book_new();
+  const wsMaster = XLSX.utils.json_to_sheet(state.master.map(m => ({
+    'Control Number': m.id, 'Item Name': m.en, 'Tên thiết bị': m.vi,
+    'Team': m.team, 'Status': m.status, 'Model': m.model || '', 'Serial': m.serial || '', 'Note': m.note || ''
+  })));
+  XLSX.utils.book_append_sheet(wb, wsMaster, 'Master List');
+
+  const wsReq = XLSX.utils.json_to_sheet(state.requirements.map(r => ({
+    'Team': r.team, 'Control Prefix': r.prefix, 'Equipment': r.equip, 'Standard Qty': r.std
+  })));
+  XLSX.utils.book_append_sheet(wb, wsReq, 'Team Requirement');
+
+  const wsDmg = XLSX.utils.json_to_sheet(state.damaged.map(d => ({
+    'No': d.no, 'Date': d.date, 'PIC': d.pic, 'Team': d.team,
+    'Item Name': d.item, 'Control Number': d.ctrl,
+    'Tình trạng lỗi': d.issue || '', 'Hướng xử lý': d.actionType || '',
+    'Chi phí sửa (VND)': Number(d.repairCost) || 0,
+    'Remark': d.remark || '', 'Done': d.done || ''
+  })));
+  XLSX.utils.book_append_sheet(wb, wsDmg, 'Damaged Control Number');
+
+  const wsPurch = XLSX.utils.json_to_sheet(state.purchases.map(p => ({
+    'PR ID': p.id, 'Request date': p.reqDate, 'Approval': p.approvalDate, 'Received date': p.receivedDate,
+    'Team': p.team, 'Equipment': p.equipment, 'Reason': p.reason, 'Qty': p.qty,
+    'Unit Price (VND)': p.unitPrice, 'Repair Cost (VND)': p.repairCost, 'Purchase Cost (VND)': p.purchaseCost, 'Remark': p.remark
+  })));
+  XLSX.utils.book_append_sheet(wb, wsPurch, 'Purchase & Cost');
+
+  const today = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `Handheld_Equipment_Control_${today}.xlsx`);
+  toast('📤 Đã xuất file Excel thành công!');
+}
+
+function importExcel(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+      const mSheet = wb.Sheets['Master List'] || wb.Sheets['Master_List'];
+      if (mSheet) {
+        const raw = XLSX.utils.sheet_to_json(mSheet, { header: 1 });
+        const hdrIdx = raw.findIndex(r => r && r.some(c => String(c).trim() === 'Control Number'));
+        if (hdrIdx >= 0) {
+          const parsed = [];
+          for (let i = hdrIdx + 1; i < raw.length; i++) {
+            const r = raw[i];
+            if (!r || !r[0]) continue;
+            parsed.push({
+              id: String(r[0]).trim(), en: String(r[1]||'').trim(), vi: String(r[2]||'').trim(),
+              team: String(r[3]||'').trim(), status: String(r[4]||'OK').trim(), note: String(r[5]||'').trim()
+            });
+          }
+          if (parsed.length > 0) state.master = parsed;
+        }
+      }
+      renderAll();
+      persistSections(['master']);
+      toast(`📥 Đã nạp ${state.master.length} thiết bị từ Excel và đồng bộ!`);
+    } catch (err) {
+      alert('Không đọc được file Excel: ' + err.message);
+    }
+    e.target.value = '';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ==================== HELPERS ====================
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+function removeEl(id) { const el = document.getElementById(id); if (el) el.remove(); }
+function formatVnd(n) { return (Number(n) || 0).toLocaleString('vi-VN') + ' đ'; }
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escapeAttr(s) { return String(s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+function toIsoDate(s) {
+  if (!s) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const m = String(s).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return '';
+}
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), 3200);
+}
+</script>
+</body>
+</html>
